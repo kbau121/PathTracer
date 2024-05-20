@@ -3,3 +3,4 @@ CMake*
 cmake*
 Makefile
 pathtracer
+!pathtracer/
