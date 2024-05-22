@@ -1,4 +1,5 @@
 #include <iostream>
+#include <chrono>
 
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
@@ -94,30 +95,35 @@ bool run()
 
     Scene* defaultScene = new Scene();
     DEFER(delete defaultScene);
-    Renderer renderer(defaultScene, glm::ivec2(1280, 720), program);
+    Renderer renderer(program, defaultScene, glm::uvec2(1280, 720));
 
     // #############
     // # Main Loop #
     // #############
 
+    std::chrono::steady_clock::time_point startTime = std::chrono::steady_clock::now();
     glUseProgram(program.m_id);
     while (!glfwWindowShouldClose(window))
     {
-        float aspectRatio;
         int width, height;
-
         glfwGetFramebufferSize(window, &width, &height);
-        aspectRatio = width / (float) height;
-        UNUSED(aspectRatio);
+
+        float time = std::chrono::duration<float>(std::chrono::steady_clock::now() - startTime).count();
+        glm::vec3 focus = glm::vec3(0.f, 0.f, 5.f);
+        glm::vec3 eye = focus - 10.f * glm::vec3(glm::cos(time), 0.f, glm::sin(time));
+        glm::vec3 lookAtDir = glm::normalize(focus - eye);
+        renderer.setCamera(eye, lookAtDir, glm::uvec2(width, height));
 
         glViewport(0, 0, width, height);
         glClear(GL_COLOR_BUFFER_BIT);
         
+        glUseProgram(renderer.m_program.m_id);
         glDrawArrays(GL_TRIANGLES, 0, 3);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
+    glUseProgram(0);
 
     return true;
 }
