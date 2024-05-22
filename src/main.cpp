@@ -15,6 +15,7 @@ using namespace glm;
 #include <utils.h>
 
 #include <shaderprogram.h>
+#include <renderer.h>
 
 #define LOG_GL false
 
@@ -91,10 +92,15 @@ bool run()
     glGenVertexArrays(1, &vao);
     glBindVertexArray(vao);
 
+    Scene* defaultScene = new Scene();
+    DEFER(delete defaultScene);
+    Renderer renderer(defaultScene, glm::ivec2(1280, 720), program);
+
     // #############
     // # Main Loop #
     // #############
 
+    glUseProgram(program.m_id);
     while (!glfwWindowShouldClose(window))
     {
         float aspectRatio;
@@ -106,8 +112,7 @@ bool run()
 
         glViewport(0, 0, width, height);
         glClear(GL_COLOR_BUFFER_BIT);
-
-        glUseProgram(program.m_id);
+        
         glDrawArrays(GL_TRIANGLES, 0, 3);
 
         glfwSwapBuffers(window);
