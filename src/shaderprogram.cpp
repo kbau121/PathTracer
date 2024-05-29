@@ -6,7 +6,7 @@
 
 /// Logs any errors found when compiling a shader
 /// Returns true if no errors were found, otherwise returns false
-bool ShaderProgram::logCompileErrors(GLuint shader)
+bool ShaderProgram::logCompileErrors(GLuint shader) const
 {
     GLint isCompiled = 0;
     glGetShaderiv(shader, GL_COMPILE_STATUS, &isCompiled);
@@ -20,7 +20,6 @@ bool ShaderProgram::logCompileErrors(GLuint shader)
 
         std::cout << errorLog << std::endl;
 
-        glDeleteShader(shader);
         return false;
     }
 
@@ -98,7 +97,7 @@ ShaderProgram::~ShaderProgram()
 }
 
 /// Checks if the program has succesfully compiled
-bool ShaderProgram::isCompiled()
+bool ShaderProgram::isCompiled() const
 {
 	return m_isCompiled;
 }

@@ -12,12 +12,12 @@ public:
 private:
 	bool m_isCompiled;
 
-	bool logCompileErrors(GLuint shader);
+	bool logCompileErrors(GLuint shader) const;
 	char* readfile(const char* filename) const;
 
 public:
 	ShaderProgram(const char* vertFile, const char* fragFile);
 	~ShaderProgram();
 
-	bool isCompiled();
+	bool isCompiled() const;
 };

@@ -17,8 +17,15 @@ using namespace glm;
 
 #include <shaderprogram.h>
 #include <renderer.h>
+#include <camera.h>
 
 #define LOG_GL false
+
+#define CAMERA_SENSITIVITY 0.01f
+
+// #################
+// # Error Logging #
+// #################
 
 bool logIsCompiled(GLuint shader)
 {
@@ -53,8 +60,53 @@ void logGLError(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei 
         type, severity, message);
 }
 
+// ###################
+// # Input Callbacks #
+// ###################
+
+struct CallbackAccessibleData {
+    ivec2 mousePosition;
+    Camera* camera;
+};
+
+static void mouseCursorPosCallback(GLFWwindow* window, double xpos, double ypos)
+{
+    CallbackAccessibleData& data = *(CallbackAccessibleData*)glfwGetWindowUserPointer(window);
+    glm::ivec2 mousePosition = glm::vec2(xpos, ypos);
+    glm::vec2 offset = glm::vec2(mousePosition - data.mousePosition);
+
+    // Middle Mouse : Pan
+    if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_MIDDLE) != GLFW_RELEASE)
+    {
+        data.camera->pan(CAMERA_SENSITIVITY * glm::vec2(-offset.x, offset.y));
+    }
+
+    // Left Mouse : Orbit
+    if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) != GLFW_RELEASE)
+    {
+        data.camera->orbit(CAMERA_SENSITIVITY * glm::vec2(offset.x, -offset.y));
+    }
+
+    // Right Mouse : Zoom
+    if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) != GLFW_RELEASE)
+    {
+        data.camera->zoom(glm::max(0.1f, 1.f + CAMERA_SENSITIVITY * offset.y));
+    }
+
+    data.mousePosition = mousePosition;
+}
+
 bool run()
 {
+    // ##############
+    // # Scene Init #
+    // ##############
+
+    Scene* defaultScene = new Scene();
+    DEFER(delete defaultScene);
+    Camera* camera = new Camera(glm::vec3(0.f, 0.f, -5.f), glm::vec3(0.f, 0.f, 5.f), glm::uvec2(1280, 720));
+    DEFER(delete camera);
+
     // #############
     // # GLFW Init #
     // #############
@@ -76,6 +128,12 @@ bool run()
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1);
 
+    // Callbacks
+    CallbackAccessibleData callbackAccessibleData {ivec2(), camera};
+    glfwSetWindowUserPointer(window, &callbackAccessibleData);
+
+    glfwSetCursorPosCallback(window, mouseCursorPosCallback);
+
     LOG_AND_RETURN_IF_ERROR(glewInit() == GLEW_OK);
 
     // ###############
@@ -93,26 +151,19 @@ bool run()
     glGenVertexArrays(1, &vao);
     glBindVertexArray(vao);
 
-    Scene* defaultScene = new Scene();
-    DEFER(delete defaultScene);
-    Renderer renderer(program, defaultScene, glm::uvec2(1280, 720));
+    Renderer renderer(program, defaultScene, camera);
 
     // #############
     // # Main Loop #
     // #############
 
-    std::chrono::steady_clock::time_point startTime = std::chrono::steady_clock::now();
     glUseProgram(program.m_id);
     while (!glfwWindowShouldClose(window))
     {
+        renderer.updateCamera();
+
         int width, height;
         glfwGetFramebufferSize(window, &width, &height);
-
-        float time = std::chrono::duration<float>(std::chrono::steady_clock::now() - startTime).count();
-        glm::vec3 focus = glm::vec3(0.f, 0.f, 5.f);
-        glm::vec3 eye = focus - 10.f * glm::vec3(glm::cos(time), 0.f, glm::sin(time));
-        glm::vec3 lookAtDir = glm::normalize(focus - eye);
-        renderer.setCamera(eye, lookAtDir, glm::uvec2(width, height));
 
         glViewport(0, 0, width, height);
         glClear(GL_COLOR_BUFFER_BIT);

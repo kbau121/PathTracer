@@ -1,9 +1,7 @@
 #include <renderer.h>
 
-#include <iostream>
-
-Renderer::Renderer(ShaderProgram& program, Scene* scene, glm::uvec2 resolution)
-	: m_scene(scene), m_program(program), m_eyePos(0.f, 0.f, 0.f), m_eyeDir(0.f, 0.f, 1.f)
+Renderer::Renderer(const ShaderProgram& program, Scene* scene, Camera* camera)
+	: m_scene(scene), m_camera(camera), m_program(program)
 {
 	glActiveTexture(GL_TEXTURE0);
 	glGenBuffers(1, &m_verticesBuffer);
@@ -21,17 +19,18 @@ Renderer::Renderer(ShaderProgram& program, Scene* scene, glm::uvec2 resolution)
 	glBindTexture(GL_TEXTURE_BUFFER, m_indicesTexture);
 	glTexBuffer(GL_TEXTURE_BUFFER, GL_RGB32F, m_indicesBuffer);
 
-	m_uEyePos = glGetUniformLocation(program.m_id, "eyePos");
-    m_uEyeDir = glGetUniformLocation(program.m_id, "eyeDir");
+	m_uEye = glGetUniformLocation(program.m_id, "eye");
+    m_uForward = glGetUniformLocation(program.m_id, "forward");
+    m_uUp = glGetUniformLocation(program.m_id, "up");
+    m_uRight = glGetUniformLocation(program.m_id, "right");
     m_uResolution = glGetUniformLocation(program.m_id, "resolution");
 
 	glUseProgram(program.m_id);
 	glUniform1i(glGetUniformLocation(program.m_id, "verticesTex"), 0);
     glUniform1i(glGetUniformLocation(program.m_id, "indicesTex"), 1);
-    glUniform3fv(m_uEyePos, 1, &m_eyePos[0]);
-    glUniform3fv(m_uEyeDir, 1, &m_eyeDir[0]);
-    glUniform2uiv(m_uResolution, 1, &resolution[0]);
     glUseProgram(0);
+
+    updateCamera();
 }
 
 Renderer::~Renderer()
@@ -43,14 +42,15 @@ Renderer::~Renderer()
 	glDeleteBuffers(1, &m_indicesBuffer);
 }
 
-void Renderer::setCamera(glm::vec3 eyePos, glm::vec3 eyeDir, glm::uvec2 resolution)
+void Renderer::updateCamera() const
 {
-	m_eyePos = eyePos;
-	m_eyeDir = eyeDir;
+	m_camera->update();
 
 	glUseProgram(m_program.m_id);
-    glUniform3fv(m_uEyePos, 1, &m_eyePos[0]);
-    glUniform3fv(m_uEyeDir, 1, &m_eyeDir[0]);
-    glUniform2uiv(m_uResolution, 1, &resolution[0]);
+    glUniform3fv(m_uEye, 1, &m_camera->m_eye[0]);
+    glUniform3fv(m_uForward, 1, &m_camera->m_forward[0]);
+    glUniform3fv(m_uUp, 1, &m_camera->m_up[0]);
+    glUniform3fv(m_uRight, 1, &m_camera->m_right[0]);
+    glUniform2uiv(m_uResolution, 1, &m_camera->m_resolution[0]);
     glUseProgram(0);
 }
