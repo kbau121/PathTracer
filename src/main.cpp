@@ -19,6 +19,9 @@ using namespace glm;
 #include <renderer.h>
 #include <camera.h>
 
+#define TINYOBJLOADER_IMPLEMENTATION
+#include <tiny_obj_loader.h>
+
 #define LOG_GL false
 
 #define CAMERA_SENSITIVITY 0.01f
@@ -102,9 +105,9 @@ bool run()
     // # Scene Init #
     // ##############
 
-    Scene* defaultScene = new Scene();
+    Scene* defaultScene = new Scene("assets/cube.obj");
     DEFER(delete defaultScene);
-    Camera* camera = new Camera(glm::vec3(0.f, 0.f, -5.f), glm::vec3(0.f, 0.f, 5.f), glm::uvec2(1280, 720));
+    Camera* camera = new Camera(glm::vec3(0.f, 0.f, -5.f), glm::vec3(0.f, 0.f, 0.f), glm::uvec2(1280, 720));
     DEFER(delete camera);
 
     // #############

@@ -2,14 +2,16 @@
 
 #define PI 3.14159265358979323
 
-layout(location = 0) uniform samplerBuffer verticesTex;
+layout(location = 0) uniform uint indexCount;
 layout(location = 1) uniform samplerBuffer indicesTex;
 
-layout(location = 2) uniform uvec2 resolution;
-layout(location = 3) uniform vec3 eye;
-layout(location = 4) uniform vec3 forward;
-layout(location = 5) uniform vec3 up;
-layout(location = 6) uniform vec3 right;
+layout(location = 2) uniform samplerBuffer verticesTex;
+
+layout(location = 3) uniform uvec2 resolution;
+layout(location = 4) uniform vec3 eye;
+layout(location = 5) uniform vec3 forward;
+layout(location = 6) uniform vec3 up;
+layout(location = 7) uniform vec3 right;
 
 layout(location = 0) in vec2 texCoords;
 
@@ -39,9 +41,8 @@ Ray raycast()
 
 bool intersect(Ray ray, out float t)
 {
-    // TODO know how many triangles there are for maximum i
-    t = 0f;
-    for (int i = 0; i < 1; ++i)
+    t = 1.f / 0.f;
+    for (int i = 0; i < indexCount / 3; ++i)
     {
         vec3 triangle = texelFetch(indicesTex, i).xyz;
 
@@ -54,19 +55,19 @@ bool intersect(Ray ray, out float t)
 
         vec3 n = normalize(cross(e0, e1));
 
-        t = (dot(n, v0) - dot(n, ray.origin)) / dot(n, ray.direction);
-        if (t < 0.f) continue;
+        float sample_t = (dot(n, v0) - dot(n, ray.origin)) / dot(n, ray.direction);
+        if (sample_t < 0.f || sample_t > t) continue;
 
-        vec3 Q = ray.origin + t * ray.direction;
+        vec3 Q = ray.origin + sample_t * ray.direction;
 
         if (dot(cross(v1 - v0, Q - v0), n) < 0.f) continue;
         if (dot(cross(v2 - v1, Q - v1), n) < 0.f) continue;
         if (dot(cross(v0 - v2, Q - v2), n) < 0.f) continue;
 
-        return true;
+        t = sample_t;
     }
 
-    return false;
+    return !isinf(t);
 }
 
 void main()

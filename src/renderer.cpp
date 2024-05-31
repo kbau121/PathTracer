@@ -26,6 +26,7 @@ Renderer::Renderer(const ShaderProgram& program, Scene* scene, Camera* camera)
     m_uResolution = glGetUniformLocation(program.m_id, "resolution");
 
 	glUseProgram(program.m_id);
+	glUniform1ui(glGetUniformLocation(program.m_id, "indexCount"), scene->m_indices.size());
 	glUniform1i(glGetUniformLocation(program.m_id, "verticesTex"), 0);
     glUniform1i(glGetUniformLocation(program.m_id, "indicesTex"), 1);
     glUseProgram(0);
