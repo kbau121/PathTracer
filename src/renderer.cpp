@@ -3,6 +3,7 @@
 Renderer::Renderer(const ShaderProgram& program, Scene* scene, Camera* camera)
 	: m_scene(scene), m_camera(camera), m_program(program)
 {
+	// Vertices
 	glActiveTexture(GL_TEXTURE0);
 	glGenBuffers(1, &m_verticesBuffer);
 	glBindBuffer(GL_TEXTURE_BUFFER, m_verticesBuffer);
@@ -11,14 +12,25 @@ Renderer::Renderer(const ShaderProgram& program, Scene* scene, Camera* camera)
 	glBindTexture(GL_TEXTURE_BUFFER, m_verticesTexture);
 	glTexBuffer(GL_TEXTURE_BUFFER, GL_RGB32F, m_verticesBuffer);
 
+	// Indices
 	glActiveTexture(GL_TEXTURE1);
 	glGenBuffers(1, &m_indicesBuffer);
 	glBindBuffer(GL_TEXTURE_BUFFER, m_indicesBuffer);
-	glBufferData(GL_TEXTURE_BUFFER, sizeof(glm::vec3) * scene->m_indices.size(), &scene->m_indices[0], GL_STATIC_DRAW);
+	glBufferData(GL_TEXTURE_BUFFER, sizeof(glm::vec4) * scene->m_indices.size(), &scene->m_indices[0], GL_STATIC_DRAW);
 	glGenTextures(1, &m_indicesTexture);
 	glBindTexture(GL_TEXTURE_BUFFER, m_indicesTexture);
-	glTexBuffer(GL_TEXTURE_BUFFER, GL_RGB32F, m_indicesBuffer);
+	glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32UI, m_indicesBuffer);
 
+	// Vertex Data
+	glActiveTexture(GL_TEXTURE2);
+	glGenBuffers(1, &m_vertexDataBuffer);
+	glBindBuffer(GL_TEXTURE_BUFFER, m_vertexDataBuffer);
+	glBufferData(GL_TEXTURE_BUFFER, sizeof(Scene::VertexData) * scene->m_vertexData.size(), &scene->m_vertexData[0], GL_STATIC_DRAW);
+	glGenTextures(1, &m_vertexDataTexture);
+	glBindTexture(GL_TEXTURE_BUFFER, m_vertexDataTexture);
+	glTexBuffer(GL_TEXTURE_BUFFER, GL_RGB32UI, m_vertexDataBuffer);
+
+	// Uniforms
 	m_uEye = glGetUniformLocation(program.m_id, "eye");
     m_uForward = glGetUniformLocation(program.m_id, "forward");
     m_uUp = glGetUniformLocation(program.m_id, "up");
@@ -29,6 +41,7 @@ Renderer::Renderer(const ShaderProgram& program, Scene* scene, Camera* camera)
 	glUniform1ui(glGetUniformLocation(program.m_id, "indexCount"), scene->m_indices.size());
 	glUniform1i(glGetUniformLocation(program.m_id, "verticesTex"), 0);
     glUniform1i(glGetUniformLocation(program.m_id, "indicesTex"), 1);
+    glUniform1i(glGetUniformLocation(program.m_id, "vertexDataTex"), 2);
     glUseProgram(0);
 
     updateCamera();

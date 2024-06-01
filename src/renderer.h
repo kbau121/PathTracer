@@ -17,8 +17,8 @@ public:
 	const ShaderProgram& m_program;
 
 private:
-	GLuint m_verticesTexture, m_indicesTexture;
-	GLuint m_verticesBuffer,  m_indicesBuffer;
+	GLuint m_verticesTexture, m_indicesTexture, m_vertexDataTexture;
+	GLuint m_verticesBuffer,  m_indicesBuffer,  m_vertexDataBuffer;
 
 	GLuint m_uEye, m_uForward, m_uUp, m_uRight, m_uResolution;
 

@@ -105,9 +105,9 @@ bool run()
     // # Scene Init #
     // ##############
 
-    Scene* defaultScene = new Scene("assets/cube.obj");
+    Scene* defaultScene = new Scene("assets/smoothCube.obj");
     DEFER(delete defaultScene);
-    Camera* camera = new Camera(glm::vec3(0.f, 0.f, -5.f), glm::vec3(0.f, 0.f, 0.f), glm::uvec2(1280, 720));
+    Camera* camera = new Camera(glm::vec3(0.f, 0.f, 5.f), glm::vec3(0.f, 0.f, 0.f), glm::uvec2(1280, 720));
     DEFER(delete camera);
 
     // #############
