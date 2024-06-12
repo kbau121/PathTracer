@@ -99,6 +99,12 @@ static void mouseCursorPosCallback(GLFWwindow* window, double xpos, double ypos)
     data.mousePosition = mousePosition;
 }
 
+static void windowSizeCallback(GLFWwindow* window, int width, int height)
+{
+    CallbackAccessibleData& data = *(CallbackAccessibleData*)glfwGetWindowUserPointer(window);
+    data.camera->m_resolution = glm::uvec2(width, height);
+}
+
 bool run()
 {
     // ##############
@@ -136,6 +142,7 @@ bool run()
     glfwSetWindowUserPointer(window, &callbackAccessibleData);
 
     glfwSetCursorPosCallback(window, mouseCursorPosCallback);
+    glfwSetWindowSizeCallback(window, windowSizeCallback);
 
     LOG_AND_RETURN_IF_ERROR(glewInit() == GLEW_OK);
 
