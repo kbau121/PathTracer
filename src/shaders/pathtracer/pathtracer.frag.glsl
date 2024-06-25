@@ -12,6 +12,9 @@ layout(location = 1) uniform samplerBuffer indicesTex;
 layout(location = 2) uniform samplerBuffer verticesTex;
 layout(location = 3) uniform samplerBuffer vertexDataTex;
 
+layout(location = 4) uniform sampler2D accumTexture;
+layout(location = 5) uniform uint iterationCount;
+
 layout(location = 10) uniform uvec2 resolution;
 layout(location = 11) uniform vec3 eye;
 layout(location = 12) uniform vec3 forward;
@@ -54,10 +57,20 @@ vec3 barycentricCoordinate(vec3 point, vec3 v0, vec3 v1, vec3 v2)
     return vec3(u, v, w);
 }
 
+// from ShaderToy https://www.shadertoy.com/view/4tXyWN
+uvec2 seed;
+float rng()
+{
+    seed += uvec2(1);
+    uvec2 q = 1103515245U * ((seed >> 1U) ^ seed.yx);
+    uint n = 1103515245U * ((q.x) ^ (q.y >> 3U));
+    return float(n) * (1.f / float(0xffffffffU));
+}
+
 const float FOVY = 19.5f * PI / 180.f;
 Ray raycast()
 {
-    vec2 offset = vec2(0.5f);
+    vec2 offset = vec2(rng(), rng());
     vec2 screenCoords = (gl_FragCoord.xy + offset) / resolution;
     screenCoords = screenCoords * 2.f - vec2(1.f);
 
@@ -123,15 +136,23 @@ bool intersect(Ray ray, out float t, out vec3 nor)
 
 void main()
 {
+    seed = uvec2(iterationCount, iterationCount + 1) * uvec2(gl_FragCoord.xy);
     Ray ray = raycast();
 
     out_color = vec4(0.f, 0.f, 0.f, 1.f);
     float t;
     vec3 nor;
+
+    vec3 col = vec3(0.f);
     if (intersect(ray, t, nor))
     {
         vec3 p = ray.origin + ray.direction * t;
 
-        out_color = vec4((nor + vec3(1.f)) * 0.5f, 1.f);
+        col = col + (nor + vec3(1.f)) * 0.5f;
     }
+
+    vec3 accumCol = texture(accumTexture, texCoords).rgb;
+    col = (accumCol * iterationCount + col) / (iterationCount + 1);
+
+    out_color = vec4(col, 1.f);
 }

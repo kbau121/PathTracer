@@ -1,8 +1,26 @@
 #include <renderer.h>
 
-Renderer::Renderer(const ShaderProgram& program, Scene* scene, Camera* camera)
-	: m_scene(scene), m_camera(camera), m_program(program)
+Renderer::Renderer(const ShaderProgram& program, const ShaderProgram& postProgram, Scene* scene, Camera* camera)
+	: m_scene(scene), m_camera(camera), m_program(program), m_postProgram(postProgram), m_iterationCount(0)
 {
+	// Framebuffer
+	glGenFramebuffers(1, &m_fbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
+
+	glActiveTexture(GL_TEXTURE3);
+	glGenTextures(1, &m_accumulationTexture);
+	glBindTexture(GL_TEXTURE_2D, m_accumulationTexture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, camera->m_resolution.x, camera->m_resolution.y, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_accumulationTexture, 0);
+
+	GLenum drawBuffers[1] = {GL_COLOR_ATTACHMENT0};
+	glDrawBuffers(1, drawBuffers);
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
 	// Vertices
 	glActiveTexture(GL_TEXTURE0);
 	glGenBuffers(1, &m_verticesBuffer);
@@ -42,6 +60,9 @@ Renderer::Renderer(const ShaderProgram& program, Scene* scene, Camera* camera)
 	glUniform1i(glGetUniformLocation(program.m_id, "verticesTex"), 0);
     glUniform1i(glGetUniformLocation(program.m_id, "indicesTex"), 1);
     glUniform1i(glGetUniformLocation(program.m_id, "vertexDataTex"), 2);
+    glUniform1i(glGetUniformLocation(program.m_id, "accumTexture"), 3);
+    glUseProgram(m_postProgram.m_id);
+    glUniform1i(glGetUniformLocation(postProgram.m_id, "inTexture"), 3);
     glUseProgram(0);
 
     updateCamera();
@@ -50,13 +71,79 @@ Renderer::Renderer(const ShaderProgram& program, Scene* scene, Camera* camera)
 Renderer::~Renderer()
 {
 	glDeleteTextures(1, &m_verticesTexture);
-	glDeleteTextures(1, &m_indicesBuffer);
+	glDeleteTextures(1, &m_indicesTexture);
+	glDeleteTextures(1, &m_accumulationTexture);
 
 	glDeleteBuffers(1, &m_verticesBuffer);
 	glDeleteBuffers(1, &m_indicesBuffer);
 }
 
-void Renderer::updateCamera() const
+void Renderer::draw()
+{
+	// Accumulation
+
+	glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
+
+	glUseProgram(m_program.m_id);
+
+	glUniform1ui(glGetUniformLocation(m_program.m_id, "iterationCount"), m_iterationCount);
+	m_iterationCount++;
+
+	glDrawArrays(GL_TRIANGLES, 0, 3);
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	// Output
+
+	glViewport(0, 0, m_camera->m_resolution.x, m_camera->m_resolution.y);
+	glClear(GL_COLOR_BUFFER_BIT);
+
+	glUseProgram(m_postProgram.m_id);
+	glActiveTexture(GL_TEXTURE3);
+	glBindTexture(GL_TEXTURE_2D, m_accumulationTexture);
+	glDrawArrays(GL_TRIANGLES, 0, 3);
+
+	glUseProgram(0);
+}
+
+void Renderer::reset()
+{
+	m_iterationCount = 0;
+
+	glViewport(0, 0, m_camera->m_resolution.x, m_camera->m_resolution.y);
+	glClear(GL_COLOR_BUFFER_BIT);
+}
+
+void Renderer::resize(const glm::uvec2& resolution)
+{
+	m_camera->m_resolution = resolution;
+
+	// Recreate the accumulation texture
+	glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
+
+	glActiveTexture(GL_TEXTURE3);
+	glGenTextures(1, &m_accumulationTexture);
+	glBindTexture(GL_TEXTURE_2D, m_accumulationTexture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, resolution.x, resolution.y, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_accumulationTexture, 0);
+
+	GLenum drawBuffers[1] = {GL_COLOR_ATTACHMENT0};
+	glDrawBuffers(1, drawBuffers);
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	// Update the shader's stored resolution
+	glUseProgram(m_program.m_id);
+	glUniform2uiv(m_uResolution, 1, &m_camera->m_resolution[0]);
+	glUseProgram(0);
+
+	reset();
+}
+
+void Renderer::updateCamera()
 {
 	m_camera->update();
 
@@ -67,4 +154,6 @@ void Renderer::updateCamera() const
     glUniform3fv(m_uRight, 1, &m_camera->m_right[0]);
     glUniform2uiv(m_uResolution, 1, &m_camera->m_resolution[0]);
     glUseProgram(0);
+
+    reset();
 }

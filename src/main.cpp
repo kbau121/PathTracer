@@ -69,31 +69,37 @@ void logGLError(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei 
 
 struct CallbackAccessibleData {
     ivec2 mousePosition;
-    Camera* camera;
+    Renderer* renderer;
 };
 
 static void mouseCursorPosCallback(GLFWwindow* window, double xpos, double ypos)
 {
     CallbackAccessibleData& data = *(CallbackAccessibleData*)glfwGetWindowUserPointer(window);
+    Renderer* renderer = data.renderer;
+    Camera* camera = renderer->m_camera;
+
     glm::ivec2 mousePosition = glm::vec2(xpos, ypos);
     glm::vec2 offset = glm::vec2(mousePosition - data.mousePosition);
 
     // Middle Mouse : Pan
     if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_MIDDLE) != GLFW_RELEASE)
     {
-        data.camera->pan(CAMERA_SENSITIVITY * glm::vec2(-offset.x, offset.y));
+        camera->pan(CAMERA_SENSITIVITY * glm::vec2(-offset.x, offset.y));
+        renderer->updateCamera();
     }
 
     // Left Mouse : Orbit
     if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) != GLFW_RELEASE)
     {
-        data.camera->orbit(CAMERA_SENSITIVITY * glm::vec2(offset.x, -offset.y));
+        camera->orbit(CAMERA_SENSITIVITY * glm::vec2(offset.x, -offset.y));
+        renderer->updateCamera();
     }
 
     // Right Mouse : Zoom
     if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) != GLFW_RELEASE)
     {
-        data.camera->zoom(glm::max(0.1f, 1.f + CAMERA_SENSITIVITY * offset.y));
+        camera->zoom(glm::max(0.1f, 1.f + CAMERA_SENSITIVITY * offset.y));
+        renderer->updateCamera();
     }
 
     data.mousePosition = mousePosition;
@@ -102,7 +108,7 @@ static void mouseCursorPosCallback(GLFWwindow* window, double xpos, double ypos)
 static void windowSizeCallback(GLFWwindow* window, int width, int height)
 {
     CallbackAccessibleData& data = *(CallbackAccessibleData*)glfwGetWindowUserPointer(window);
-    data.camera->m_resolution = glm::uvec2(width, height);
+    data.renderer->resize(glm::uvec2(width, height));
 }
 
 bool run()
@@ -113,7 +119,7 @@ bool run()
 
     Scene* defaultScene = new Scene("assets/smoothCube.obj");
     DEFER(delete defaultScene);
-    Camera* camera = new Camera(glm::vec3(0.f, 0.f, 5.f), glm::vec3(0.f, 0.f, 0.f), glm::uvec2(1280, 720));
+    Camera* camera = new Camera(glm::vec3(0.f, 0.f, 10.f), glm::vec3(0.f, 0.f, 0.f), glm::uvec2(1280, 720));
     DEFER(delete camera);
 
     // #############
@@ -138,9 +144,6 @@ bool run()
     glfwSwapInterval(1);
 
     // Callbacks
-    CallbackAccessibleData callbackAccessibleData {ivec2(), camera};
-    glfwSetWindowUserPointer(window, &callbackAccessibleData);
-
     glfwSetCursorPosCallback(window, mouseCursorPosCallback);
     glfwSetWindowSizeCallback(window, windowSizeCallback);
 
@@ -157,11 +160,16 @@ bool run()
     GLuint vao;
 
     ShaderProgram program = ShaderProgram("src/shaders/pathtracer/pathtracer.vert.glsl", "src/shaders/pathtracer/pathtracer.frag.glsl");
+    ShaderProgram postProgram = ShaderProgram("src/shaders/pathtracer/pathtracer.vert.glsl", "src/shaders/pathtracer/post.frag.glsl");
 
     glGenVertexArrays(1, &vao);
     glBindVertexArray(vao);
 
-    Renderer renderer(program, defaultScene, camera);
+    Renderer renderer(program, postProgram, defaultScene, camera);
+
+    // Callback data
+    CallbackAccessibleData callbackAccessibleData {ivec2(), &renderer};
+    glfwSetWindowUserPointer(window, &callbackAccessibleData);
 
     // #############
     // # Main Loop #
@@ -170,16 +178,7 @@ bool run()
     glUseProgram(program.m_id);
     while (!glfwWindowShouldClose(window))
     {
-        renderer.updateCamera();
-
-        int width, height;
-        glfwGetFramebufferSize(window, &width, &height);
-
-        glViewport(0, 0, width, height);
-        glClear(GL_COLOR_BUFFER_BIT);
-        
-        glUseProgram(renderer.m_program.m_id);
-        glDrawArrays(GL_TRIANGLES, 0, 3);
+        renderer.draw();
 
         glfwSwapBuffers(window);
         glfwPollEvents();
