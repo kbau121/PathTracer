@@ -8,5 +8,11 @@ layout(location = 0) out vec4 out_color;
 
 void main()
 {
-	out_color = vec4(texture(inTexture, texCoords).rgb, 1.f);
+	vec3 color = texture(inTexture, texCoords).rgb;
+	// Reinhard operator
+	color = color / (vec3(1.f) + color);
+	// Gamma correction
+	color = pow(color, vec3(1.f / 2.2f));
+
+	out_color = vec4(color, 1.f);
 }

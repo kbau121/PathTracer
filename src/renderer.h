@@ -21,8 +21,8 @@ private:
 	GLuint m_fbo;
 	GLuint m_accumulationTexture;
 
-	GLuint m_verticesTexture, m_indicesTexture, m_vertexDataTexture;
-	GLuint m_verticesBuffer,  m_indicesBuffer,  m_vertexDataBuffer;
+	GLuint m_verticesTexture, m_indicesTexture, m_vertexDataTexture, m_lightTexture;
+	GLuint m_verticesBuffer,  m_indicesBuffer,  m_vertexDataBuffer,  m_lightBuffer;
 
 	GLuint m_uEye, m_uForward, m_uUp, m_uRight, m_uResolution;
 

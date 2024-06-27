@@ -117,7 +117,11 @@ bool run()
     // # Scene Init #
     // ##############
 
-    Scene* defaultScene = new Scene("assets/smoothCube.obj");
+    // TODO add a way to define lights from referenced files
+    Scene* defaultScene = new Scene("assets/shadowTest.obj");
+    defaultScene->m_lights = std::vector<Scene::Light> { Scene::Light(glm::vec3(1.f), glm::vec3(0.f, 1.95f, 0.f), glm::vec3(3.14f / 2.f, 0.f, 0.f), glm::vec3(2.f, 2.f, 1.f)) };
+    defaultScene->m_lightCount = glm::uvec4(1, 0, 0, 0);
+
     DEFER(delete defaultScene);
     Camera* camera = new Camera(glm::vec3(0.f, 0.f, 10.f), glm::vec3(0.f, 0.f, 0.f), glm::uvec2(1280, 720));
     DEFER(delete camera);

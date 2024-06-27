@@ -1,6 +1,7 @@
 #pragma once
 
 #include <glm/glm.hpp>
+#include <glm/gtx/euler_angles.hpp>
 
 #include <error_handling.h>
 #include <gl/gl.h>
@@ -23,19 +24,39 @@ public:
 		glm::vec3 textureCoordinates;
 	};
 
+	struct Light {
+		Light(glm::vec3 radiance, glm::mat4 transform)
+			: radiance(vec4(radiance, 0.f)), transform(transform)
+		{}
+
+		Light(glm::vec3 radiance, glm::vec3 position, glm::vec3 rotation, glm::vec3 scale)
+			: Light(radiance, glm::translate(glm::mat4(1.f), position) * glm::eulerAngleYXZ(rotation.y, rotation.x, rotation.z) * glm::scale(glm::mat4(1.f), scale))
+		{}
+
+		vec4 radiance;
+		glm::mat4 transform;
+	};
+
 	std::vector<glm::vec3> m_vertices;
 	std::vector<VertexData> m_vertexData;
 
 	std::vector<glm::vec4> m_indices;
 
+	std::vector<Light> m_lights;
+	glm::uvec4 m_lightCount;
+
 	Scene()
-		: m_vertices(std::vector<glm::vec3> {glm::vec3(-1.f, -1.f, 5.f), glm::vec3(1.f, -1.f, 5.f), glm::vec3(0.f, 1.f, 5.f)}),
+		: m_vertices(std::vector<glm::vec3> {glm::vec3(-1.f, -1.f, 0.f), glm::vec3(1.f, -1.f, 0.f), glm::vec3(0.f, 1.f, 0.f)}),
 		  m_vertexData(std::vector<VertexData> {
 		  	VertexData(glm::vec3(0.f, 0.f, -1.f), glm::vec2(0.f)),
 		  	VertexData(glm::vec3(0.f, 0.f, -1.f), glm::vec2(0.f)),
 		  	VertexData(glm::vec3(0.f, 0.f, -1.f), glm::vec2(0.f))
 		  }),
-		  m_indices(std::vector<glm::vec4> {glm::vec4(0, 1, 2, 0)})
+		  m_indices(std::vector<glm::vec4> {glm::vec4(0, 1, 2, 0)}),
+		  m_lights(std::vector<Light> {
+		  	Light(glm::vec3(1.f), glm::vec3(0.f, 2.f, 0.f), glm::vec3(3.14f / 2.f, 0.f, 0.f), glm::vec3(2.f, 1.f, 1.f))
+		  }),
+		  m_lightCount(1, 0, 0, 0)
 	{ }
 
 	// Load the scene as an obj file
