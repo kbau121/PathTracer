@@ -326,7 +326,7 @@ bool intersect(Ray ray, out Intersection intersection)
 
 void main()
 {
-    seed = uvec2(iterationCount, iterationCount + 1) * uvec2(gl_FragCoord.xy);
+    seed = uvec2(iterationCount + 1, iterationCount + 2) * uvec2(gl_FragCoord.xy);
     Ray ray = raycast();
 
     out_color = vec4(0.f, 0.f, 0.f, 1.f);
@@ -351,7 +351,7 @@ void main()
         else
         {
             Material material = getMaterial(getMaterialIndex(intersection.index));
-            
+
             attenuation *= material.albedo * dot(intersection.normal, wiW) / PI;
         }
 
