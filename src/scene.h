@@ -37,6 +37,16 @@ public:
 		glm::mat4 transform;
 	};
 
+	struct Material {
+		Material(glm::vec3 albedo, float roughness, float metallic)
+			: albedo(albedo), roughness(roughness), metallic(metallic)
+		{}
+
+		glm::vec3 albedo;
+		float roughness;
+		float metallic;
+	};
+
 	std::vector<glm::vec3> m_vertices;
 	std::vector<VertexData> m_vertexData;
 
@@ -44,6 +54,9 @@ public:
 
 	std::vector<Light> m_lights;
 	glm::uvec4 m_lightCount;
+
+	std::vector<Material> m_materials;
+	std::vector<uint32_t> m_materialMap;
 
 	Scene()
 		: m_vertices(std::vector<glm::vec3> {glm::vec3(-1.f, -1.f, 0.f), glm::vec3(1.f, -1.f, 0.f), glm::vec3(0.f, 1.f, 0.f)}),
@@ -60,14 +73,14 @@ public:
 	{ }
 
 	// Load the scene as an obj file
-	Scene(const char* filename)
+	Scene(const char* objFilename, const char* mtlRoot = nullptr)
 	{
 		tinyobj::attrib_t attrib;
 		std::vector<tinyobj::shape_t> shapes;
 		std::vector<tinyobj::material_t> materials;
 		std::string err;
 
-		if(!LOG_IF_ERROR(tinyobj::LoadObj(&attrib, &shapes, &materials, &err, filename, nullptr, true)))
+		if(!LOG_IF_ERROR(tinyobj::LoadObj(&attrib, &shapes, &materials, &err, objFilename, mtlRoot, true)))
 		{
 			std::cout << err << std::endl;
 			return;
@@ -114,8 +127,19 @@ public:
 				}
 				indices.w = indexOffset + f;
 
+				m_materialMap.push_back(shapes[s].mesh.material_ids[f]);
 				m_indices.push_back(indices);
 			}
+		}
+
+		// Materials
+		for (size_t i = 0; i < materials.size(); ++i)
+		{
+			const tinyobj::material_t& mat = materials[i];
+
+			glm::vec3 albedo = glm::vec3(mat.diffuse[0], mat.diffuse[1], mat.diffuse[2]);
+
+			m_materials.push_back(Material(albedo, mat.roughness, mat.metallic));
 		}
 	}
 

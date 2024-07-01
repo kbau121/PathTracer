@@ -118,12 +118,12 @@ bool run()
     // ##############
 
     // TODO add a way to define lights from referenced files
-    Scene* defaultScene = new Scene("assets/shadowTest.obj");
-    defaultScene->m_lights = std::vector<Scene::Light> { Scene::Light(glm::vec3(1.f), glm::vec3(0.f, 1.95f, 0.f), glm::vec3(3.14f / 2.f, 0.f, 0.f), glm::vec3(2.f, 2.f, 1.f)) };
+    Scene* defaultScene = new Scene("assets/materialTest.obj", "assets/");
+    defaultScene->m_lights = std::vector<Scene::Light> { Scene::Light(glm::vec3(1.f), glm::vec3(0.f, 1.95f, 0.f), glm::vec3(3.14f / 2.f, 0.f, 0.f), glm::vec3(1.25f, 1.25f, 1.f)) };
     defaultScene->m_lightCount = glm::uvec4(1, 0, 0, 0);
 
     DEFER(delete defaultScene);
-    Camera* camera = new Camera(glm::vec3(0.f, 0.f, 10.f), glm::vec3(0.f, 0.f, 0.f), glm::uvec2(1280, 720));
+    Camera* camera = new Camera(glm::vec3(0.f, 1.5f, 15.f), glm::vec3(0.f, -0.25f, 0.f), glm::uvec2(1280, 720));
     DEFER(delete camera);
 
     // #############

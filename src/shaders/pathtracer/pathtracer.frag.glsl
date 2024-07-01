@@ -7,6 +7,12 @@
 #define ATTRIBUTE_NORMAL 0
 #define ATTRIBUTE_TEXTURE_COORDINATE 1
 
+// Material attributes
+#define ALBEDO 0
+#define ROUGHNESS 3
+#define METALLIC 4
+#define MATERIAL_SIZE (1 + METALLIC)
+
 // Object types
 #define GEOMETRY 0
 #define LIGHT 1
@@ -22,6 +28,9 @@ layout(location = 5) uniform uint iterationCount;
 
 layout(location = 6) uniform samplerBuffer lightTex;
 layout(location = 7) uniform uvec4 lightCount;
+
+layout(location = 8) uniform samplerBuffer materialTex;
+layout(location = 9) uniform usamplerBuffer materialMapTex;
 
 layout(location = 10) uniform uvec2 resolution;
 layout(location = 11) uniform vec3 eye;
@@ -56,6 +65,13 @@ struct Light
     mat4 invTransform;
 };
 
+struct Material
+{
+    vec3 albedo;
+    float roughness;
+    float metallic;
+};
+
 vec3 getVertexAttribute(int dataIndex, int vertexOffset, int vertexAttribute)
 {
     return texelFetch(vertexDataTex, (dataIndex * 3 + vertexOffset) * NUM_VERTEX_ATTRIBUTES + vertexAttribute).xyz;
@@ -72,6 +88,26 @@ Light getLight(int index)
     }
 
     return Light(radiance, transform, inverse(transform));
+}
+
+int getMaterialIndex(int triangleId)
+{
+    return int(texelFetch(materialMapTex, triangleId)[0]);
+}
+
+Material getMaterial(int index)
+{
+    int offset = index * MATERIAL_SIZE;
+    vec3 albedo = vec3(
+        texelFetch(materialTex, offset + ALBEDO + 0)[0],
+        texelFetch(materialTex, offset + ALBEDO + 1)[0],
+        texelFetch(materialTex, offset + ALBEDO + 2)[0]
+        );
+
+    float roughness = texelFetch(materialTex, offset + ROUGHNESS)[0];
+    float metallic = texelFetch(materialTex, offset + METALLIC)[0];
+
+    return Material(albedo, roughness, metallic);
 }
 
 vec3 barycentricCoordinate(vec3 point, vec3 v0, vec3 v1, vec3 v2)
@@ -314,8 +350,9 @@ void main()
         }
         else
         {
-            vec3 albedo = (intersection.normal + vec3(1.f)) * 0.5f;
-            attenuation *= albedo * dot(intersection.normal, wiW) / PI;
+            Material material = getMaterial(getMaterialIndex(intersection.index));
+            
+            attenuation *= material.albedo * dot(intersection.normal, wiW) / PI;
         }
 
         if (pdf <= 0.f)

@@ -5,6 +5,8 @@
 #define VERTEX_DATA_TEXTURE  GL_TEXTURE2
 #define ACCUMULATION_TEXTURE GL_TEXTURE3
 #define LIGHT_TEXTURE        GL_TEXTURE4
+#define MATERIAL_TEXTURE     GL_TEXTURE5
+#define MATERIAL_MAP_TEXTURE GL_TEXTURE6
 
 Renderer::Renderer(const ShaderProgram& program, const ShaderProgram& postProgram, Scene* scene, Camera* camera)
 	: m_scene(scene), m_camera(camera), m_program(program), m_postProgram(postProgram), m_iterationCount(0)
@@ -63,6 +65,23 @@ Renderer::Renderer(const ShaderProgram& program, const ShaderProgram& postProgra
 	glBindTexture(GL_TEXTURE_BUFFER, m_lightTexture);
 	glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, m_lightBuffer);
 
+	// Materials
+	glActiveTexture(MATERIAL_TEXTURE);
+	glGenBuffers(1, &m_materialBuffer);
+	glBindBuffer(GL_TEXTURE_BUFFER, m_materialBuffer);
+	glBufferData(GL_TEXTURE_BUFFER, sizeof(Scene::Material) * scene->m_materials.size(), &scene->m_materials[0], GL_STATIC_DRAW);
+	glGenTextures(1, &m_materialTexture);
+	glBindTexture(GL_TEXTURE_BUFFER, m_materialTexture);
+	glTexBuffer(GL_TEXTURE_BUFFER, GL_R32F, m_materialBuffer);
+
+	glActiveTexture(MATERIAL_MAP_TEXTURE);
+	glGenBuffers(1, &m_materialMapBuffer);
+	glBindBuffer(GL_TEXTURE_BUFFER, m_materialMapBuffer);
+	glBufferData(GL_TEXTURE_BUFFER, sizeof(uint32_t) * scene->m_materialMap.size(), &scene->m_materialMap[0], GL_STATIC_DRAW);
+	glGenTextures(1, &m_materialMapTexture);
+	glBindTexture(GL_TEXTURE_BUFFER, m_materialMapTexture);
+	glTexBuffer(GL_TEXTURE_BUFFER, GL_R32UI, m_materialMapBuffer);
+
 	// Uniforms
 	m_uEye = glGetUniformLocation(program.m_id, "eye");
     m_uForward = glGetUniformLocation(program.m_id, "forward");
@@ -81,8 +100,11 @@ Renderer::Renderer(const ShaderProgram& program, const ShaderProgram& postProgra
     glUniform1i(glGetUniformLocation(program.m_id, "lightTex"), LIGHT_TEXTURE - GL_TEXTURE0);
     glUniform4uiv(glGetUniformLocation(program.m_id, "lightCount"), 1, &scene->m_lightCount[0]);
 
+    glUniform1i(glGetUniformLocation(program.m_id, "materialTex"), MATERIAL_TEXTURE - GL_TEXTURE0);
+    glUniform1i(glGetUniformLocation(program.m_id, "materialMapTex"), MATERIAL_MAP_TEXTURE - GL_TEXTURE0);
+
     glUseProgram(m_postProgram.m_id);
-    glUniform1i(glGetUniformLocation(postProgram.m_id, "inTexture"), 3);
+    glUniform1i(glGetUniformLocation(postProgram.m_id, "inTexture"), ACCUMULATION_TEXTURE - GL_TEXTURE0);
 
     glUseProgram(0);
 
