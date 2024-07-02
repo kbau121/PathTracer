@@ -1,6 +1,7 @@
 #version 460
 
-#define PI 3.14159265358979323
+#define PI     3.14159265358979323
+#define INV_PI 0.31830988618379067
 
 // Vertex attributes
 #define NUM_VERTEX_ATTRIBUTES 2
@@ -188,7 +189,7 @@ vec3 squareToHemisphereCosine(vec2 xi)
 
 float hemisphereCosinePDF(vec3 hemisphereSample)
 {
-    return hemisphereSample.z / PI;
+    return hemisphereSample.z * INV_PI;
 }
 
 // from ShaderToy https://www.shadertoy.com/view/4tXyWN
@@ -324,6 +325,17 @@ bool intersect(Ray ray, out Intersection intersection)
     return false;
 }
 
+vec3 sampleSurface(Intersection intersection, vec2 xi, vec3 outDir, out vec3 inDir, out float pdf)
+{
+    Material material = getMaterial(getMaterialIndex(intersection.index));
+
+    vec3 localInDir = squareToHemisphereCosine(xi);
+    inDir = localToWorld(intersection.normal) * localInDir;
+    pdf = hemisphereCosinePDF(localInDir);
+
+    return material.albedo * INV_PI;
+}
+
 void main()
 {
     seed = uvec2(iterationCount + 1, iterationCount + 2) * uvec2(gl_FragCoord.xy);
@@ -338,22 +350,17 @@ void main()
     {
         if (!intersect(ray, intersection)) break;
 
-        vec3 p = ray.origin + ray.direction * intersection.t;
-        vec3 wi = squareToHemisphereCosine(vec2(rng(), rng()));
-        vec3 wiW = localToWorld(intersection.normal) * wi;
-        float pdf = hemisphereCosinePDF(wi);
-
         if (intersection.type == LIGHT)
         {
             intensity = intersection.radiance;
             break;
         }
-        else
-        {
-            Material material = getMaterial(getMaterialIndex(intersection.index));
 
-            attenuation *= material.albedo * dot(intersection.normal, wiW) / PI;
-        }
+        vec2 xi = vec2(rng(), rng());
+        vec3 inDir;
+        float pdf;
+
+        attenuation *= sampleSurface(intersection, xi, -ray.direction, inDir, pdf) * dot(intersection.normal, inDir);
 
         if (pdf <= 0.f)
         {
@@ -362,12 +369,12 @@ void main()
         }
         attenuation /= pdf;
 
-        ray.direction = wiW;
-        ray.origin = p + ray.direction * 0.0001f;
+        ray = Ray(ray.origin + ray.direction * intersection.t + inDir * 0.0001f, inDir);
     }
 
     vec3 accumCol = texture(accumTexture, texCoords).rgb;
-    vec3 col = (accumCol * iterationCount + attenuation * intensity) / (iterationCount + 1);
+    vec3 passCol = attenuation * intensity;
+    vec3 col = (accumCol * iterationCount + passCol) / (iterationCount + 1);
 
     out_color = vec4(col, 1.f);
 }
