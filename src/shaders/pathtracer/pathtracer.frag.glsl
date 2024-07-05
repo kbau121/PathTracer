@@ -73,6 +73,10 @@ struct Material
     float metallic;
 };
 
+// ==================
+// == Data Getters ==
+// ==================
+
 vec3 getVertexAttribute(int dataIndex, int vertexOffset, int vertexAttribute)
 {
     return texelFetch(vertexDataTex, (dataIndex * 3 + vertexOffset) * NUM_VERTEX_ATTRIBUTES + vertexAttribute).xyz;
@@ -132,6 +136,11 @@ vec3 barycentricCoordinate(vec3 point, vec3 v0, vec3 v1, vec3 v2)
     return vec3(u, v, w);
 }
 
+// =======================================
+// == Coordinate System transformations ==
+// =======================================
+
+// Compute tangent and bitangent
 void coordinateSystem(in vec3 v1, out vec3 v2, out vec3 v3)
 {
     if (abs(v1.x) > abs(v1.y))
@@ -145,6 +154,8 @@ void coordinateSystem(in vec3 v1, out vec3 v2, out vec3 v3)
     v3 = cross(v1, v2);
 }
 
+// Local space assumes a normal of (0, 0, 1)
+
 mat3 localToWorld(vec3 normal)
 {
     vec3 tangent, bitangent;
@@ -156,6 +167,68 @@ mat3 worldToLocal(vec3 normal)
 {
     return transpose(localToWorld(normal));
 }
+
+// ========================================
+// == Local space trigonometry functions ==
+// ========================================
+
+float cosTheta(vec3 v)
+{
+    return v.z;
+}
+
+float cos2Theta(vec3 v)
+{
+    return v.z * v.z;
+}
+
+float sin2Theta(vec3 v)
+{
+    return max(0.f, 1.f - cos2Theta(v));
+}
+
+float sinTheta(vec3 v)
+{
+    return sqrt(sin2Theta(v));
+}
+
+float tanTheta(vec3 v)
+{
+    return sinTheta(v) / cosTheta(v);
+}
+
+float tan2Theta(vec3 v)
+{
+    return sin2Theta(v) / cos2Theta(v);
+}
+
+float cosPhi(vec3 v)
+{
+    float sinTheta = sinTheta(v);
+    return (sinTheta == 0) ? 1 : clamp(v.x / sinTheta, -1.f, 1.f);
+}
+
+float sinPhi(vec3 v)
+{
+    float sinTheta = sinTheta(v);
+    return (sinTheta == 0) ? 0 : clamp(v.y / sinTheta, -1.f, 1.f);
+}
+
+float cos2Phi(vec3 v)
+{
+    float cosPhi = cosPhi(v);
+    return cosPhi * cosPhi;
+}
+
+float sin2Phi(vec3 v)
+{
+    float sinPhi = sinPhi(v);
+    return sinPhi * sinPhi;
+}
+
+// ========================
+// == Sampling Functions ==
+// ========================
 
 vec3 squareToDiskConcentric(vec2 xi)
 {
@@ -180,6 +253,13 @@ vec3 squareToDiskConcentric(vec2 xi)
         );
 }
 
+vec2 squareToUniformDiskPolar(vec2 xi)
+{
+    float r = sqrt(xi.x);
+    float theta = 2 * PI * xi.y;
+    return vec2(r * cos(theta), r * sin(theta));
+}
+
 vec3 squareToHemisphereCosine(vec2 xi)
 {
     vec3 hemisphereSample = squareToDiskConcentric(xi);
@@ -191,6 +271,10 @@ float hemisphereCosinePDF(vec3 hemisphereSample)
 {
     return hemisphereSample.z * INV_PI;
 }
+
+// =======================
+// == Utility Functions ==
+// =======================
 
 // from ShaderToy https://www.shadertoy.com/view/4tXyWN
 uvec2 seed;
@@ -217,6 +301,10 @@ Ray raycast()
 
     return Ray(eye, normalize(p - eye));
 }
+
+// ============================
+// == Intersection Functions ==
+// ============================
 
 bool rectangleIntersect(Ray ray, mat4 inverseTransform, out float t)
 {
@@ -325,16 +413,142 @@ bool intersect(Ray ray, out Intersection intersection)
     return false;
 }
 
+// ====================
+// == BxDF Functions ==
+// ====================
+
+// Microfacet helper functions
+
+float isotropicRoughness2(vec3 v, vec2 anisotropicRoughness)
+{
+    return
+        anisotropicRoughness.x * anisotropicRoughness.x * cos2Phi(v)
+        + anisotropicRoughness.y * anisotropicRoughness.y * sin2Phi(v);
+}
+
+float isotropicRoughness(vec3 v, vec2 anisotropicRoughness)
+{
+    return sqrt(isotropicRoughness2(v, anisotropicRoughness));
+}
+
+float trowbridgeReitzDistribution(vec3 localMicroNormal, vec2 roughness)
+{
+    float tan2Theta = tan2Theta(localMicroNormal);
+    if (isinf(tan2Theta)) return 0.f;
+
+    float cos2Theta = cos2Theta(localMicroNormal);
+    float cos4Theta = cos2Theta * cos2Theta;
+    float e =
+        (
+          cos2Phi(localMicroNormal) / (roughness.x * roughness.x)
+          + sin2Phi(localMicroNormal) / (roughness.y * roughness.y)
+        ) * tan2Theta;
+
+    return 1.f / (PI * roughness.x * roughness.y * cos4Theta * (1.f + e) * (1.f + e));
+}
+
+float trowbridgeReitzLambda(vec3 v, vec2 roughness)
+{
+    float tan2Theta = tan2Theta(v);
+    if (isinf(tan2Theta)) return 0.f;
+
+    return (sqrt(1.f + isotropicRoughness2(v, roughness) * tan2Theta) - 1.f) * 0.5f;
+}
+
+float trowbridgeReitzMasking(vec3 outDir, vec3 inDir, vec2 roughness)
+{
+    return 1.f / (1.f + trowbridgeReitzLambda(outDir, roughness) + trowbridgeReitzLambda(inDir, roughness));
+}
+
+float trowbridgeReitzPdf(vec3 localMicroNormal, vec2 roughness)
+{
+    return trowbridgeReitzDistribution(localMicroNormal, roughness) * abs(cosTheta(localMicroNormal));
+}
+
+vec3 trowbridgeReitzSampleNormal(vec3 localOutDir, vec2 xi, vec2 roughness)
+{
+    vec3 hemisphereOutDir = normalize(vec3(roughness.x * localOutDir.x, roughness.y * localOutDir.y, localOutDir.z));
+    if (hemisphereOutDir.z < 0) hemisphereOutDir = -hemisphereOutDir;
+
+    vec3 T1 = (hemisphereOutDir.z < 0.99999f) ? normalize(cross(vec3(0.f, 0.f, 1.f), hemisphereOutDir)) : vec3(1.f, 0.f, 0.f);
+    vec3 T2 = cross(hemisphereOutDir, T1);
+
+    vec2 p = squareToUniformDiskPolar(xi);
+
+    float h = sqrt(1.f - p.x * p.x);
+    p.y = mix((1.f - hemisphereOutDir.z) / 2.f, h, p.y);
+
+    float pz = sqrt(max(0.f, 1.f - dot(p, p)));
+    vec3 hemisphereNormal = p.x * T1 + p.y * T2 + pz * hemisphereOutDir;
+    return normalize(vec3(roughness.x * hemisphereNormal.x, roughness.y * hemisphereNormal.y, max(0.000001f, hemisphereNormal.z)));
+}
+
+// Attenuation functions
+
+vec3 diffuseAttenuation(Material material)
+{
+    return material.albedo * INV_PI;
+}
+
+vec3 microfacetAttenuation(vec3 albedo, vec3 localOutDir, vec3 localInDir, vec2 roughness)
+{
+    float cosThetaOut = abs(cosTheta(localOutDir));
+    float cosThetaIn = abs(cosTheta(localInDir));
+    vec3 localMicroNormal = localOutDir + localInDir;
+
+    if (cosThetaIn <= 0.f || cosThetaOut <= 0.f) return vec3(0.f);
+    if (localMicroNormal.x == 0.f && localMicroNormal.y == 0.f && localMicroNormal.z == 0.f) return vec3(0.f);
+    localMicroNormal = normalize(localMicroNormal);
+
+    // TODO Varied fresnel
+    vec3 fresnel = vec3(1.f);
+    float distribution = trowbridgeReitzDistribution(localMicroNormal, roughness);
+    float masking = trowbridgeReitzMasking(localOutDir, localInDir, roughness);
+
+    return albedo * distribution * masking * fresnel / (4 * cosThetaIn * cosThetaOut);
+}
+
+// Generic BxDF sampling function
+
+#define MICROFACET_IMPL
 vec3 sampleSurface(Intersection intersection, vec2 xi, vec3 outDir, out vec3 inDir, out float pdf)
 {
     Material material = getMaterial(getMaterialIndex(intersection.index));
 
+#ifdef MICROFACET_IMPL
+    vec2 roughness = vec2(material.roughness);
+
+    // Find the entrance direction
+    vec3 localOutDir = worldToLocal(intersection.normal) * outDir;
+
+    if (localOutDir.z == 0.f) return vec3(0.f);
+
+    vec3 localMicroNormal = trowbridgeReitzSampleNormal(localOutDir, xi, roughness);
+    vec3 localInDir = reflect(-localOutDir, localMicroNormal);
+
+    if (localInDir.z * localOutDir.z <= 0.f) return vec3(0.f);
+
+    inDir = localToWorld(intersection.normal) * localInDir;
+
+    // Compute the PDF
+    pdf = trowbridgeReitzPdf(localMicroNormal, roughness) / (4.f * dot(localOutDir, localMicroNormal));
+    return microfacetAttenuation(material.albedo, localOutDir, localInDir, roughness);
+
+#else
+    // Find the entrance direction
     vec3 localInDir = squareToHemisphereCosine(xi);
     inDir = localToWorld(intersection.normal) * localInDir;
+
+    // Compute the PDF
     pdf = hemisphereCosinePDF(localInDir);
 
-    return material.albedo * INV_PI;
+    return diffuseAttenuation(material);
+#endif
 }
+
+// ======================
+// == Main Render Loop ==
+// ======================
 
 void main()
 {

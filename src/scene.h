@@ -139,7 +139,11 @@ public:
 
 			glm::vec3 albedo = glm::vec3(mat.diffuse[0], mat.diffuse[1], mat.diffuse[2]);
 
-			m_materials.push_back(Material(albedo, mat.roughness, mat.metallic));
+			// Same shininess to roughness transform used by Blender
+			float clampedShininess = std::max(0.f, std::min(mat.shininess, 1000.f));
+			float roughness = 1.f - std::sqrt(clampedShininess / 1000.f);
+
+			m_materials.push_back(Material(albedo, roughness, mat.metallic));
 		}
 	}
 
