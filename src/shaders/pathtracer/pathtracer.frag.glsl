@@ -302,6 +302,28 @@ Ray raycast()
     return Ray(eye, normalize(p - eye));
 }
 
+// Complex number operations
+
+// From https://gist.github.com/DonKarlssonSan/f87ba5e4e5f1093cb83e39024a6a5e72
+vec2 cxSqrt(vec2 a)
+{
+    float r = length(a);
+    float realPart = sqrt(0.5f * (r + a.x));
+    float imagPart = sqrt(max(0.f, 0.5f * (r - a.x)));
+    if (a.y < 0.f) imagPart = -imagPart;
+    return vec2(realPart, imagPart);
+}
+
+vec2 cxMul(vec2 a, vec2 b)
+{
+    return vec2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x);
+}
+
+vec2 cxDiv(vec2 a, vec2 b)
+{
+    return vec2(((a.x * b.x + a.y * b.y) / (b.x * b.x + b.y * b.y)), ((a.y * b.x - a.x * b.y) / (b.x * b.x + b.y * b.y)));
+}
+
 // ============================
 // == Intersection Functions ==
 // ============================
@@ -417,6 +439,79 @@ bool intersect(Ray ray, out Intersection intersection)
 // == BxDF Functions ==
 // ====================
 
+// Fresnel equations
+
+float fresnelDielectric(float cosThetaIn, float eta)
+{
+    // Flip the orientation if backwards
+    if (cosThetaIn < 0.f)
+    {
+        eta = 1.f / eta;
+        cosThetaIn = -cosThetaIn;
+    }
+
+    // Find the cosine of the transmitted direction according to Snell's law
+    float sin2ThetaIn = 1 - cosThetaIn * cosThetaIn;
+    float sin2ThetaTran = sin2ThetaIn / (eta * eta);
+
+    // Total interanl refraction
+    if (sin2ThetaTran >= 1.f) return 1.f;
+
+    float cosThetaTran = sqrt(1.f - sin2ThetaTran);
+
+    float refPara = (eta * cosThetaIn - cosThetaTran) / (eta * cosThetaIn + cosThetaTran);
+    float refPerp = (cosThetaIn - eta * cosThetaTran) / (cosThetaIn + eta * cosThetaTran);
+
+    return (refPara * refPara + refPerp * refPerp) / 2.f;
+}
+
+float fresnelComplex(float cosThetaIn, vec2 cxEta)
+{
+    vec2 cxCosThetaIn = vec2(max(0.f, cosThetaIn), 0.f);
+
+    // Find the cosine of the transmitted direction according to Snell's law
+    vec2 cxSin2ThetaIn = vec2(1.f - cxCosThetaIn.x * cxCosThetaIn.x, 0.f);
+    vec2 cxSin2ThetaTran = cxDiv(cxSin2ThetaIn, cxMul(cxEta, cxEta));
+
+    vec2 cxCosThetaTran = cxSqrt(vec2(1.f, 0.f) - cxSin2ThetaTran);
+
+    vec2 refPara = cxDiv(cxMul(cxEta, cxCosThetaIn) - cxCosThetaTran, cxMul(cxEta, cxCosThetaIn) + cxCosThetaTran);
+    vec2 refPerp = cxDiv(cxCosThetaIn - cxMul(cxEta, cxCosThetaTran), cxCosThetaIn + cxMul(cxEta, cxCosThetaTran));
+
+    return (dot(refPara, refPara) + dot(refPerp, refPerp)) / 2.f;
+}
+
+vec3 fresnelComplex(float cosThetaIn, vec3 eta, vec3 k)
+{
+    return vec3(
+        fresnelComplex(cosThetaIn, vec2(eta[0], k[0])),
+        fresnelComplex(cosThetaIn, vec2(eta[1], k[1])),
+        fresnelComplex(cosThetaIn, vec2(eta[2], k[2]))
+    );
+}
+
+// Transmission helper functions
+
+vec3 refract(vec3 inDir, vec3 normal, float eta)
+{
+    float cosThetaIn = dot(normal, inDir);
+
+    // Flip the orientation if backwards
+    if (cosThetaIn < 0.f)
+    {
+        eta = 1.f / eta;
+        cosThetaIn = -cosThetaIn;
+        normal = -normal;
+    }
+
+    // Find the transmitted direction according to Snell's law
+    float sin2ThetaIn = 1.f - cosThetaIn * cosThetaIn;
+    float sin2ThetaTran = sin2ThetaIn / (eta * eta);
+    float cosThetaTran = sqrt(1.f - sin2ThetaTran);
+
+    return -inDir / eta + (cosThetaIn / eta - cosThetaTran) * normal;
+}
+
 // Microfacet helper functions
 
 float isotropicRoughness2(vec3 v, vec2 anisotropicRoughness)
@@ -501,7 +596,8 @@ vec3 microfacetAttenuation(vec3 albedo, vec3 localOutDir, vec3 localInDir, vec2 
     localMicroNormal = normalize(localMicroNormal);
 
     // TODO Varied fresnel
-    vec3 fresnel = vec3(1.f);
+    vec3 fresnel = vec3(fresnelComplex(abs(dot(localOutDir, localMicroNormal)), vec2(0.27732f, 2.9278f)));
+
     float distribution = trowbridgeReitzDistribution(localMicroNormal, roughness);
     float masking = trowbridgeReitzMasking(localOutDir, localInDir, roughness);
 
