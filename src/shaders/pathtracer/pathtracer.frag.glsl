@@ -267,11 +267,6 @@ vec3 squareToHemisphereCosine(vec2 xi)
     return hemisphereSample;
 }
 
-float hemisphereCosinePDF(vec3 hemisphereSample)
-{
-    return hemisphereSample.z * INV_PI;
-}
-
 // =======================
 // == Utility Functions ==
 // =======================
@@ -555,11 +550,6 @@ float trowbridgeReitzMasking(vec3 outDir, vec3 inDir, vec2 roughness)
     return 1.f / (1.f + trowbridgeReitzLambda(outDir, roughness) + trowbridgeReitzLambda(inDir, roughness));
 }
 
-float trowbridgeReitzPdf(vec3 localMicroNormal, vec2 roughness)
-{
-    return trowbridgeReitzDistribution(localMicroNormal, roughness) * abs(cosTheta(localMicroNormal));
-}
-
 vec3 trowbridgeReitzSampleNormal(vec3 localOutDir, vec2 xi, vec2 roughness)
 {
     vec3 hemisphereOutDir = normalize(vec3(roughness.x * localOutDir.x, roughness.y * localOutDir.y, localOutDir.z));
@@ -576,6 +566,18 @@ vec3 trowbridgeReitzSampleNormal(vec3 localOutDir, vec2 xi, vec2 roughness)
     float pz = sqrt(max(0.f, 1.f - dot(p, p)));
     vec3 hemisphereNormal = p.x * T1 + p.y * T2 + pz * hemisphereOutDir;
     return normalize(vec3(roughness.x * hemisphereNormal.x, roughness.y * hemisphereNormal.y, max(0.000001f, hemisphereNormal.z)));
+}
+
+// PDF functions
+
+float hemisphereCosinePDF(vec3 hemisphereSample)
+{
+    return hemisphereSample.z * INV_PI;
+}
+
+float trowbridgeReitzPdf(vec3 localMicroNormal, vec2 roughness)
+{
+    return trowbridgeReitzDistribution(localMicroNormal, roughness) * abs(cosTheta(localMicroNormal));
 }
 
 // Attenuation functions
@@ -606,31 +608,31 @@ vec3 microfacetAttenuation(vec3 albedo, vec3 localOutDir, vec3 localInDir, vec2 
 
 // Generic BxDF sampling function
 
-#define MICROFACET_IMPL
 vec3 sampleSurface(Intersection intersection, vec2 xi, vec3 outDir, out vec3 inDir, out float pdf)
 {
     Material material = getMaterial(getMaterialIndex(intersection.index));
-
-#ifdef MICROFACET_IMPL
     vec2 roughness = vec2(material.roughness);
 
-    // Find the entrance direction
-    vec3 localOutDir = worldToLocal(intersection.normal) * outDir;
+    if (material.metallic >= 1.f)
+    {
+        // Find the entrance direction
+        vec3 localOutDir = worldToLocal(intersection.normal) * outDir;
 
-    if (localOutDir.z == 0.f) return vec3(0.f);
+        if (localOutDir.z == 0.f) return vec3(0.f);
 
-    vec3 localMicroNormal = trowbridgeReitzSampleNormal(localOutDir, xi, roughness);
-    vec3 localInDir = reflect(-localOutDir, localMicroNormal);
+        vec3 localMicroNormal = trowbridgeReitzSampleNormal(localOutDir, xi, roughness);
+        vec3 localInDir = reflect(-localOutDir, localMicroNormal);
 
-    if (localInDir.z * localOutDir.z <= 0.f) return vec3(0.f);
+        if (localInDir.z * localOutDir.z <= 0.f) return vec3(0.f);
 
-    inDir = localToWorld(intersection.normal) * localInDir;
+        inDir = localToWorld(intersection.normal) * localInDir;
 
-    // Compute the PDF
-    pdf = trowbridgeReitzPdf(localMicroNormal, roughness) / (4.f * dot(localOutDir, localMicroNormal));
-    return microfacetAttenuation(material.albedo, localOutDir, localInDir, roughness);
+        // Compute the PDF
+        pdf = trowbridgeReitzPdf(localMicroNormal, roughness) / (4.f * dot(localOutDir, localMicroNormal));
+        return microfacetAttenuation(material.albedo, localOutDir, localInDir, roughness);
+    }
 
-#else
+
     // Find the entrance direction
     vec3 localInDir = squareToHemisphereCosine(xi);
     inDir = localToWorld(intersection.normal) * localInDir;
@@ -639,7 +641,6 @@ vec3 sampleSurface(Intersection intersection, vec2 xi, vec3 outDir, out vec3 inD
     pdf = hemisphereCosinePDF(localInDir);
 
     return diffuseAttenuation(material);
-#endif
 }
 
 // ======================

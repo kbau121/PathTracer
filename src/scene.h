@@ -137,13 +137,41 @@ public:
 		{
 			const tinyobj::material_t& mat = materials[i];
 
+			// Illumination model
+			bool doHighlight = false; UNUSED(doHighlight);
+			bool doReflection = false;
+			switch (mat.illum)
+			{
+			case 1:
+				// Base color and Ambient
+				break;
+			case 2:
+				// Specular Highlights
+				doHighlight = true;
+				break;
+			case 3:
+				// Reflections
+				doReflection = true;
+				break;
+			}
+
+			// Albedo
 			glm::vec3 albedo = glm::vec3(mat.diffuse[0], mat.diffuse[1], mat.diffuse[2]);
 
+			// Roughness
 			// Same shininess to roughness transform used by Blender
 			float clampedShininess = std::max(0.f, std::min(mat.shininess, 1000.f));
 			float roughness = 1.f - std::sqrt(clampedShininess / 1000.f);
 
-			m_materials.push_back(Material(albedo, roughness, mat.metallic));
+			// Metallic
+			float metallic = 0.f;
+			if (doReflection)
+			{
+				metallic = (mat.ambient[0] + mat.ambient[1] + mat.ambient[2]) / 3.f;
+				if (metallic < 0.f) metallic = 1.f;
+			}
+
+			m_materials.push_back(Material(albedo, roughness, metallic));
 		}
 	}
 
