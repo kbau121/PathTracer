@@ -613,7 +613,8 @@ vec3 sampleSurface(Intersection intersection, vec2 xi, vec3 outDir, out vec3 inD
     Material material = getMaterial(getMaterialIndex(intersection.index));
     vec2 roughness = vec2(material.roughness);
 
-    if (material.metallic >= 1.f)
+    // Metallic
+    if (material.metallic >= rng())
     {
         // Find the entrance direction
         vec3 localOutDir = worldToLocal(intersection.normal) * outDir;
@@ -632,7 +633,8 @@ vec3 sampleSurface(Intersection intersection, vec2 xi, vec3 outDir, out vec3 inD
         return microfacetAttenuation(material.albedo, localOutDir, localInDir, roughness);
     }
 
-
+    // Diffuse
+    
     // Find the entrance direction
     vec3 localInDir = squareToHemisphereCosine(xi);
     inDir = localToWorld(intersection.normal) * localInDir;
