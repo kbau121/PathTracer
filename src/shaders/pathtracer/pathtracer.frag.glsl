@@ -9,10 +9,11 @@
 #define ATTRIBUTE_TEXTURE_COORDINATE 1
 
 // Material attributes
-#define ALBEDO 0
-#define ROUGHNESS 3
-#define METALLIC 4
-#define MATERIAL_SIZE (1 + METALLIC)
+#define ALBEDO                     0
+#define ROUGHNESS     (ALBEDO    + 3)
+#define METALLIC      (ROUGHNESS + 1)
+#define IOR           (METALLIC  + 1)
+#define MATERIAL_SIZE (IOR       + 1)
 
 // Object types
 #define GEOMETRY 0
@@ -71,6 +72,7 @@ struct Material
     vec3 albedo;
     float roughness;
     float metallic;
+    float ior;
 };
 
 // ==================
@@ -111,8 +113,9 @@ Material getMaterial(int index)
 
     float roughness = texelFetch(materialTex, offset + ROUGHNESS)[0];
     float metallic = texelFetch(materialTex, offset + METALLIC)[0];
+    float ior = texelFetch(materialTex, offset + IOR)[0];
 
-    return Material(albedo, roughness, metallic);
+    return Material(albedo, roughness, metallic, ior);
 }
 
 vec3 barycentricCoordinate(vec3 point, vec3 v0, vec3 v1, vec3 v2)
@@ -606,6 +609,41 @@ vec3 microfacetAttenuation(vec3 albedo, vec3 localOutDir, vec3 localInDir, vec2 
     return albedo * distribution * masking * fresnel / (4 * cosThetaIn * cosThetaOut);
 }
 
+// BxDF functions
+
+vec3 microFacetBSDF(Intersection intersection, Material material, vec2 xi, vec3 outDir, out vec3 inDir, out float pdf)
+{
+    vec2 roughness = vec2(material.roughness);
+
+    // Find the entrance direction
+    vec3 localOutDir = worldToLocal(intersection.normal) * outDir;
+
+    if (localOutDir.z == 0.f) return vec3(0.f);
+
+    vec3 localMicroNormal = trowbridgeReitzSampleNormal(localOutDir, xi, roughness);
+    vec3 localInDir = reflect(-localOutDir, localMicroNormal);
+
+    if (localInDir.z * localOutDir.z <= 0.f) return vec3(0.f);
+
+    inDir = localToWorld(intersection.normal) * localInDir;
+
+    // Compute the PDF
+    pdf = trowbridgeReitzPdf(localMicroNormal, roughness) / (4.f * dot(localOutDir, localMicroNormal));
+    return microfacetAttenuation(material.albedo, localOutDir, localInDir, roughness);
+}
+
+vec3 diffuseBSDF(Intersection intersection, Material material, vec2 xi, vec3 outDir, out vec3 inDir, out float pdf)
+{
+    // Find the entrance direction
+    vec3 localInDir = squareToHemisphereCosine(xi);
+    inDir = localToWorld(intersection.normal) * localInDir;
+
+    // Compute the PDF
+    pdf = hemisphereCosinePDF(localInDir);
+
+    return diffuseAttenuation(material);
+}
+
 // Generic BxDF sampling function
 
 vec3 sampleSurface(Intersection intersection, vec2 xi, vec3 outDir, out vec3 inDir, out float pdf)
@@ -616,33 +654,11 @@ vec3 sampleSurface(Intersection intersection, vec2 xi, vec3 outDir, out vec3 inD
     // Metallic
     if (material.metallic >= rng())
     {
-        // Find the entrance direction
-        vec3 localOutDir = worldToLocal(intersection.normal) * outDir;
-
-        if (localOutDir.z == 0.f) return vec3(0.f);
-
-        vec3 localMicroNormal = trowbridgeReitzSampleNormal(localOutDir, xi, roughness);
-        vec3 localInDir = reflect(-localOutDir, localMicroNormal);
-
-        if (localInDir.z * localOutDir.z <= 0.f) return vec3(0.f);
-
-        inDir = localToWorld(intersection.normal) * localInDir;
-
-        // Compute the PDF
-        pdf = trowbridgeReitzPdf(localMicroNormal, roughness) / (4.f * dot(localOutDir, localMicroNormal));
-        return microfacetAttenuation(material.albedo, localOutDir, localInDir, roughness);
+        return microFacetBSDF(intersection, material, xi, outDir, inDir, pdf);
     }
 
     // Diffuse
-    
-    // Find the entrance direction
-    vec3 localInDir = squareToHemisphereCosine(xi);
-    inDir = localToWorld(intersection.normal) * localInDir;
-
-    // Compute the PDF
-    pdf = hemisphereCosinePDF(localInDir);
-
-    return diffuseAttenuation(material);
+    return diffuseBSDF(intersection, material, xi, outDir, inDir, pdf);
 }
 
 // ======================

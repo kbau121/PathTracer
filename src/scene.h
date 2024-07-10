@@ -38,13 +38,14 @@ public:
 	};
 
 	struct Material {
-		Material(glm::vec3 albedo, float roughness, float metallic)
-			: albedo(albedo), roughness(roughness), metallic(metallic)
+		Material(glm::vec3 albedo, float roughness, float metallic, float ior)
+			: albedo(albedo), roughness(roughness), metallic(metallic), ior(ior)
 		{}
 
 		glm::vec3 albedo;
 		float roughness;
 		float metallic;
+		float ior;
 	};
 
 	std::vector<glm::vec3> m_vertices;
@@ -159,9 +160,17 @@ public:
 			glm::vec3 albedo = glm::vec3(mat.diffuse[0], mat.diffuse[1], mat.diffuse[2]);
 
 			// Roughness
+			float roughness = 1.f;
 			// Same shininess to roughness transform used by Blender
-			float clampedShininess = std::max(0.f, std::min(mat.shininess, 1000.f));
-			float roughness = 1.f - std::sqrt(clampedShininess / 1000.f);
+			if (mat.shininess < 0.f && doHighlight)
+			{
+				roughness = 0.f;
+			}
+			else
+			{
+				float clampedShininess = std::max(0.f, std::min(mat.shininess, 1000.f));
+				roughness = 1.f - std::sqrt(clampedShininess / 1000.f);
+			}
 
 			// Metallic
 			float metallic = 0.f;
@@ -171,7 +180,10 @@ public:
 				if (metallic < 0.f) metallic = 1.f;
 			}
 
-			m_materials.push_back(Material(albedo, roughness, metallic));
+			// IOR
+			float ior = mat.ior;
+
+			m_materials.push_back(Material(albedo, roughness, metallic, ior));
 		}
 	}
 
