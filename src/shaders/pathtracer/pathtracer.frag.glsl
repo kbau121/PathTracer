@@ -1,7 +1,8 @@
 #version 460
 
-#define PI     3.14159265358979323
-#define INV_PI 0.31830988618379067
+#define PI      3.14159265358979323
+#define INV_PI  0.31830988618379067
+#define IOR_AIR 1.0003
 
 // Vertex attributes
 #define NUM_VERTEX_ATTRIBUTES 2
@@ -490,7 +491,7 @@ vec3 fresnelComplex(float cosThetaIn, vec3 eta, vec3 k)
 
 // Transmission helper functions
 
-vec3 refract(vec3 inDir, vec3 normal, float eta)
+bool refract(vec3 inDir, vec3 normal, float eta, out float relativeEta, out vec3 outDir)
 {
     float cosThetaIn = dot(normal, inDir);
 
@@ -505,9 +506,19 @@ vec3 refract(vec3 inDir, vec3 normal, float eta)
     // Find the transmitted direction according to Snell's law
     float sin2ThetaIn = 1.f - cosThetaIn * cosThetaIn;
     float sin2ThetaTran = sin2ThetaIn / (eta * eta);
+
+    // Handle total internal reflection
+    if (sin2ThetaTran >= 1.f)
+    {
+        return false;
+    }
+
     float cosThetaTran = sqrt(1.f - sin2ThetaTran);
 
-    return -inDir / eta + (cosThetaIn / eta - cosThetaTran) * normal;
+    outDir = -inDir / eta + (cosThetaIn / eta - cosThetaTran) * normal;
+    relativeEta = eta;
+
+    return true;
 }
 
 // Microfacet helper functions
@@ -611,7 +622,62 @@ vec3 microfacetAttenuation(vec3 albedo, vec3 localOutDir, vec3 localInDir, vec2 
 
 // BxDF functions
 
-vec3 microFacetBSDF(Intersection intersection, Material material, vec2 xi, vec3 outDir, out vec3 inDir, out float pdf)
+vec3 dielectricBxDF(Intersection intersection, Material material, vec2 xi, vec3 outDir, out vec3 inDir, out float pdf)
+{
+    vec2 roughness = vec2(material.roughness);
+
+    // Find the microfacet normal
+    vec3 localOutDir = worldToLocal(intersection.normal) * outDir;
+    if (localOutDir.z == 0.f) return vec3(0.f);
+    vec3 localMicroNormal = trowbridgeReitzSampleNormal(localOutDir, xi, roughness);
+
+    float reflectance = fresnelDielectric(dot(localOutDir, localMicroNormal), material.ior);
+    float transmittance = 1.f - reflectance;
+
+    float reflectProb = reflectance;
+    float transmitProb = transmittance;
+
+    if (rng() <= reflectProb)
+    {
+        // Find the entrance direction
+        vec3 localInDir = reflect(-localOutDir, localMicroNormal);
+        if (localInDir.z * localOutDir.z <= 0.f) return vec3(0.f);
+
+        inDir = localToWorld(intersection.normal) * localInDir;
+
+        // PDF
+        pdf = trowbridgeReitzPdf(localMicroNormal, roughness) / (4.f * dot(localOutDir, localMicroNormal)) * reflectProb;
+
+        float distribution = trowbridgeReitzDistribution(localMicroNormal, roughness);
+        float masking = trowbridgeReitzMasking(localOutDir, localInDir, roughness);
+
+        return vec3(distribution * masking * reflectance / (4 * cosTheta(localInDir) * cosTheta(localOutDir)));
+    }
+    else
+    {
+        // Find the entrance direction
+        float relativeEta;
+        vec3 localInDir;
+        bool totalInteralReflection = !refract(localOutDir, localMicroNormal, material.ior, relativeEta, localInDir);
+
+        if (localOutDir.z * localInDir.z > 0.f || localInDir.z == 0.f || totalInteralReflection) return vec3(0.f);
+
+        inDir = localToWorld(intersection.normal) * localInDir;
+
+        // PDF
+        float detDenom = dot(localInDir, localMicroNormal) + dot(localOutDir, localMicroNormal) / relativeEta;
+        float detMicro_detIn = abs(dot(localInDir, localMicroNormal)) / (detDenom * detDenom);
+        pdf = trowbridgeReitzPdf(localMicroNormal, roughness) * detMicro_detIn * transmitProb;
+
+        float distribution = trowbridgeReitzDistribution(localMicroNormal, roughness);
+        float masking = trowbridgeReitzMasking(localOutDir, localInDir, roughness);
+
+        return vec3(distribution * masking * transmittance * abs(dot(localInDir, localMicroNormal)) * dot(localOutDir, localMicroNormal) /
+            (cosTheta(localInDir) * cosTheta(localOutDir) * detDenom * detDenom));
+    }
+}
+
+vec3 microFacetBxDF(Intersection intersection, Material material, vec2 xi, vec3 outDir, out vec3 inDir, out float pdf)
 {
     vec2 roughness = vec2(material.roughness);
 
@@ -632,7 +698,7 @@ vec3 microFacetBSDF(Intersection intersection, Material material, vec2 xi, vec3 
     return microfacetAttenuation(material.albedo, localOutDir, localInDir, roughness);
 }
 
-vec3 diffuseBSDF(Intersection intersection, Material material, vec2 xi, vec3 outDir, out vec3 inDir, out float pdf)
+vec3 diffuseBxDF(Intersection intersection, Material material, vec2 xi, vec3 outDir, out vec3 inDir, out float pdf)
 {
     // Find the entrance direction
     vec3 localInDir = squareToHemisphereCosine(xi);
@@ -654,11 +720,16 @@ vec3 sampleSurface(Intersection intersection, vec2 xi, vec3 outDir, out vec3 inD
     // Metallic
     if (material.metallic >= rng())
     {
-        return microFacetBSDF(intersection, material, xi, outDir, inDir, pdf);
+        return microFacetBxDF(intersection, material, xi, outDir, inDir, pdf);
+    }
+
+    if (material.roughness < 1.f)
+    {
+        return dielectricBxDF(intersection, material, xi, outDir, inDir, pdf);
     }
 
     // Diffuse
-    return diffuseBSDF(intersection, material, xi, outDir, inDir, pdf);
+    return diffuseBxDF(intersection, material, xi, outDir, inDir, pdf);
 }
 
 // ======================
