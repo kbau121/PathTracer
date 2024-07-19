@@ -653,10 +653,14 @@ vec3 dielectricBxDF(Intersection intersection, Material material, vec2 xi, vec3 
     float transmittance = 1.f - reflectance;
 
     float reflectProb = reflectance;
-    float transmitProb = transmittance;
+    float transmitProb = transmittance * material.transmission;
+    float diffuseProb = transmittance * (1.f - material.transmission);
 
-    if (rng() <= reflectProb)
+    float interactionChoice = rng();
+    if (interactionChoice <= reflectProb)
     {
+        // SPECULAR
+
         // Find the entrance direction
         vec3 localInDir = reflect(-localOutDir, localMicroNormal);
         if (localInDir.z * localOutDir.z <= 0.f) return vec3(0.f);
@@ -671,21 +675,8 @@ vec3 dielectricBxDF(Intersection intersection, Material material, vec2 xi, vec3 
 
         return vec3(distribution * masking * reflectance / (4 * cosTheta(localInDir) * cosTheta(localOutDir)));
     }
-    else
+    else if (interactionChoice <= reflectProb + transmitProb)
     {
-        // TODO
-        // Scale on material transmittance amount
-        // 0 transmittance -> diffuseBxDF
-        // 1 transmittance -> below BTDF
-
-        // DIFFUSE
-
-        // TODO take into account entering and exiting the surface for diffuse interactions
-
-        vec3 diffuseOut = diffuseBxDF(intersection, material, xi, outDir, inDir, pdf);
-        pdf *= transmitProb;
-        return diffuseOut;
-
         // TRANSMITTANCE
 
         // Find the entrance direction
@@ -707,6 +698,16 @@ vec3 dielectricBxDF(Intersection intersection, Material material, vec2 xi, vec3 
 
         return vec3(distribution * masking * transmittance * abs(dot(localInDir, localMicroNormal)) * dot(localOutDir, localMicroNormal) /
             (cosTheta(localInDir) * cosTheta(localOutDir) * detDenom * detDenom));
+    }
+    else
+    {
+        // DIFFUSE
+
+        // TODO take into account entering and exiting the surface for diffuse interactions
+
+        vec3 diffuseOut = diffuseBxDF(intersection, material, xi, outDir, inDir, pdf);
+        pdf *= diffuseProb;
+        return diffuseOut;
     }
 }
 
