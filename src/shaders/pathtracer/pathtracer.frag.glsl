@@ -10,11 +10,13 @@
 #define ATTRIBUTE_TEXTURE_COORDINATE 1
 
 // Material attributes
-#define ALBEDO                     0
-#define ROUGHNESS     (ALBEDO    + 3)
-#define METALLIC      (ROUGHNESS + 1)
-#define IOR           (METALLIC  + 1)
-#define MATERIAL_SIZE (IOR       + 1)
+#define ALBEDO                        0
+#define ROUGHNESS     (ALBEDO       + 3)
+#define METALLIC      (ROUGHNESS    + 1)
+#define IOR           (METALLIC     + 1)
+#define ANISOTROPY    (IOR          + 1)
+#define TRANSMISSION  (ANISOTROPY   + 1)
+#define MATERIAL_SIZE (TRANSMISSION + 1)
 
 // Object types
 #define GEOMETRY 0
@@ -74,6 +76,8 @@ struct Material
     float roughness;
     float metallic;
     float ior;
+    float anisotropy;
+    float transmission;
 };
 
 // ==================
@@ -115,8 +119,10 @@ Material getMaterial(int index)
     float roughness = texelFetch(materialTex, offset + ROUGHNESS)[0];
     float metallic = texelFetch(materialTex, offset + METALLIC)[0];
     float ior = texelFetch(materialTex, offset + IOR)[0];
+    float anisotropy = texelFetch(materialTex, offset + ANISOTROPY)[0];
+    float transmission = texelFetch(materialTex, offset + TRANSMISSION)[0];
 
-    return Material(albedo, roughness, metallic, ior);
+    return Material(albedo, roughness, metallic, ior, anisotropy, transmission);
 }
 
 vec3 barycentricCoordinate(vec3 point, vec3 v0, vec3 v1, vec3 v2)
