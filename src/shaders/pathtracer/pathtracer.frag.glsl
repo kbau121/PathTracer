@@ -611,16 +611,28 @@ vec3 microfacetAttenuation(vec3 albedo, vec3 localOutDir, vec3 localInDir, vec2 
     if (localMicroNormal.x == 0.f && localMicroNormal.y == 0.f && localMicroNormal.z == 0.f) return vec3(0.f);
     localMicroNormal = normalize(localMicroNormal);
 
-    // TODO Varied fresnel
+    // TODO colored metals
     vec3 fresnel = vec3(fresnelComplex(abs(dot(localOutDir, localMicroNormal)), vec2(0.27732f, 2.9278f)));
 
     float distribution = trowbridgeReitzDistribution(localMicroNormal, roughness);
     float masking = trowbridgeReitzMasking(localOutDir, localInDir, roughness);
 
-    return albedo * distribution * masking * fresnel / (4 * cosThetaIn * cosThetaOut);
+    return distribution * masking * fresnel / (4 * cosThetaIn * cosThetaOut);
 }
 
 // BxDF functions
+
+vec3 diffuseBxDF(Intersection intersection, Material material, vec2 xi, vec3 outDir, out vec3 inDir, out float pdf)
+{
+    // Find the entrance direction
+    vec3 localInDir = squareToHemisphereCosine(xi);
+    inDir = localToWorld(intersection.normal) * localInDir;
+
+    // Compute the PDF
+    pdf = hemisphereCosinePDF(localInDir);
+
+    return diffuseAttenuation(material);
+}
 
 vec3 dielectricBxDF(Intersection intersection, Material material, vec2 xi, vec3 outDir, out vec3 inDir, out float pdf)
 {
@@ -655,6 +667,21 @@ vec3 dielectricBxDF(Intersection intersection, Material material, vec2 xi, vec3 
     }
     else
     {
+        // TODO
+        // Scale on material transmittance amount
+        // 0 transmittance -> diffuseBxDF
+        // 1 transmittance -> below BTDF
+
+        // DIFFUSE
+
+        // TODO take into account entering and exiting the surface for diffuse interactions
+
+        vec3 diffuseOut = diffuseBxDF(intersection, material, xi, outDir, inDir, pdf);
+        pdf *= transmitProb;
+        return diffuseOut;
+
+        // TRANSMITTANCE
+
         // Find the entrance direction
         float relativeEta;
         vec3 localInDir;
@@ -696,18 +723,6 @@ vec3 microFacetBxDF(Intersection intersection, Material material, vec2 xi, vec3 
     // Compute the PDF
     pdf = trowbridgeReitzPdf(localMicroNormal, roughness) / (4.f * dot(localOutDir, localMicroNormal));
     return microfacetAttenuation(material.albedo, localOutDir, localInDir, roughness);
-}
-
-vec3 diffuseBxDF(Intersection intersection, Material material, vec2 xi, vec3 outDir, out vec3 inDir, out float pdf)
-{
-    // Find the entrance direction
-    vec3 localInDir = squareToHemisphereCosine(xi);
-    inDir = localToWorld(intersection.normal) * localInDir;
-
-    // Compute the PDF
-    pdf = hemisphereCosinePDF(localInDir);
-
-    return diffuseAttenuation(material);
 }
 
 // Generic BxDF sampling function
