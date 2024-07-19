@@ -38,14 +38,15 @@ public:
 	};
 
 	struct Material {
-		Material(glm::vec3 albedo, float roughness, float metallic, float ior)
-			: albedo(albedo), roughness(roughness), metallic(metallic), ior(ior)
+		Material(glm::vec3 albedo, float roughness, float metallic, float ior, float anisotropy)
+			: albedo(albedo), roughness(roughness), metallic(metallic), ior(ior), anisotropy(anisotropy)
 		{}
 
 		glm::vec3 albedo;
 		float roughness;
 		float metallic;
 		float ior;
+		float anisotropy;
 	};
 
 	std::vector<glm::vec3> m_vertices;
@@ -159,31 +160,53 @@ public:
 			// Albedo
 			glm::vec3 albedo = glm::vec3(mat.diffuse[0], mat.diffuse[1], mat.diffuse[2]);
 
-			// Roughness
-			float roughness = 1.f;
-			// Same shininess to roughness transform used by Blender
-			if (mat.shininess < 0.f && doHighlight)
-			{
-				roughness = 0.f;
-			}
-			else
-			{
-				float clampedShininess = std::max(0.f, std::min(mat.shininess, 1000.f));
-				roughness = 1.f - std::sqrt(clampedShininess / 1000.f);
-			}
-
-			// Metallic
-			float metallic = 0.f;
-			if (doReflection)
-			{
-				metallic = (mat.ambient[0] + mat.ambient[1] + mat.ambient[2]) / 3.f;
-				if (metallic < 0.f) metallic = 1.f;
-			}
-
 			// IOR
 			float ior = mat.ior;
 
-			m_materials.push_back(Material(albedo, roughness, metallic, ior));
+			float roughness, metallic, anisotropy;
+
+			if (!mat.isPBR)
+			{
+
+				// Roughness
+				roughness = 1.f;
+				// Same shininess to roughness transform used by Blender
+				if (mat.shininess < 0.f && doHighlight)
+				{
+					roughness = 0.f;
+				}
+				else
+				{
+					float clampedShininess = std::max(0.f, std::min(mat.shininess, 1000.f));
+					roughness = 1.f - std::sqrt(clampedShininess / 1000.f);
+				}
+
+				// Metallic
+				metallic = 0.f;
+				if (doReflection)
+				{
+					metallic = (mat.ambient[0] + mat.ambient[1] + mat.ambient[2]) / 3.f;
+					if (metallic < 0.f) metallic = 1.f;
+				}
+
+				// Anisotropy
+				anisotropy = 0.f;
+			}
+			else
+			{
+				// PBR extension overrides
+
+				// Roughness
+				roughness = mat.roughness;
+
+				// Metallic
+				metallic = mat.metallic;
+
+				// Anisotropy
+				anisotropy = mat.anisotropy;
+			}
+
+			m_materials.push_back(Material(albedo, roughness, metallic, ior, anisotropy));
 		}
 	}
 

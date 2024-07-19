@@ -10,11 +10,12 @@
 #define ATTRIBUTE_TEXTURE_COORDINATE 1
 
 // Material attributes
-#define ALBEDO                     0
-#define ROUGHNESS     (ALBEDO    + 3)
-#define METALLIC      (ROUGHNESS + 1)
-#define IOR           (METALLIC  + 1)
-#define MATERIAL_SIZE (IOR       + 1)
+#define ALBEDO                      0
+#define ROUGHNESS     (ALBEDO     + 3)
+#define METALLIC      (ROUGHNESS  + 1)
+#define IOR           (METALLIC   + 1)
+#define ANISOTROPY    (IOR        + 1)
+#define MATERIAL_SIZE (ANISOTROPY + 1)
 
 // Object types
 #define GEOMETRY 0
@@ -74,6 +75,7 @@ struct Material
     float roughness;
     float metallic;
     float ior;
+    float anisotropy;
 };
 
 // ==================
@@ -115,8 +117,9 @@ Material getMaterial(int index)
     float roughness = texelFetch(materialTex, offset + ROUGHNESS)[0];
     float metallic = texelFetch(materialTex, offset + METALLIC)[0];
     float ior = texelFetch(materialTex, offset + IOR)[0];
+    float anisotropy = texelFetch(materialTex, offset + ANISOTROPY)[0];
 
-    return Material(albedo, roughness, metallic, ior);
+    return Material(albedo, roughness, metallic, ior, anisotropy);
 }
 
 vec3 barycentricCoordinate(vec3 point, vec3 v0, vec3 v1, vec3 v2)
@@ -434,9 +437,170 @@ bool intersect(Ray ray, out Intersection intersection)
     return false;
 }
 
+// =================================
+// == Microfacet Helper Functions ==
+// =================================
+
+vec2 roughnessToAnisotropicWeights(float roughness, float anisotropic)
+{
+    float aspect = sqrt(1.f - 0.9f * anisotropic);
+    vec2 anisotropicWeights = vec2(roughness * roughness);
+
+    anisotropicWeights.x /= aspect;
+    anisotropicWeights.y *= aspect;
+
+    return anisotropicWeights;
+}
+
+float isotropicRoughness2(vec3 v, vec2 weights)
+{
+    return
+        weights.x * weights.x * cos2Phi(v)
+        + weights.y * weights.y * sin2Phi(v);
+}
+
+float isotropicRoughness(vec3 v, vec2 weights)
+{
+    return sqrt(isotropicRoughness2(v, weights));
+}
+
+float trowbridgeReitzDistribution(vec3 halfVector, vec2 weights)
+{
+    float tan2Theta = tan2Theta(halfVector);
+    if (isinf(tan2Theta)) return 0.f;
+
+    float cos2Theta = cos2Theta(halfVector);
+    float cos4Theta = cos2Theta * cos2Theta;
+    float e =
+        (
+          cos2Phi(halfVector) / (weights.x * weights.x)
+          + sin2Phi(halfVector) / (weights.y * weights.y)
+        ) * tan2Theta;
+
+    return 1.f / (PI * weights.x * weights.y * cos4Theta * (1.f + e) * (1.f + e));
+}
+
+float trowbridgeReitzLambda(vec3 v, vec2 weights)
+{
+    float tan2Theta = tan2Theta(v);
+    if (isinf(tan2Theta)) return 0.f;
+
+    return (sqrt(1.f + isotropicRoughness2(v, weights) * tan2Theta) - 1.f) * 0.5f;
+}
+
+float trowbridgeReitzMasking(vec3 outDir, vec3 inDir, vec2 weights)
+{
+    return 1.f / (1.f + trowbridgeReitzLambda(outDir, weights) + trowbridgeReitzLambda(inDir, weights));
+}
+
+vec3 trowbridgeReitzSampleNormal(vec3 localOutDir, vec2 xi, vec2 weights)
+{
+    vec3 hemisphereOutDir = normalize(vec3(weights.x * localOutDir.x, weights.y * localOutDir.y, localOutDir.z));
+    if (hemisphereOutDir.z < 0) hemisphereOutDir = -hemisphereOutDir;
+
+    vec3 T1 = (hemisphereOutDir.z < 0.99999f) ? normalize(cross(vec3(0.f, 0.f, 1.f), hemisphereOutDir)) : vec3(1.f, 0.f, 0.f);
+    vec3 T2 = cross(hemisphereOutDir, T1);
+
+    vec2 p = squareToUniformDiskPolar(xi);
+
+    float h = sqrt(1.f - p.x * p.x);
+    p.y = mix((1.f - hemisphereOutDir.z) / 2.f, h, p.y);
+
+    float pz = sqrt(max(0.f, 1.f - dot(p, p)));
+    vec3 hemisphereNormal = p.x * T1 + p.y * T2 + pz * hemisphereOutDir;
+    return normalize(vec3(weights.x * hemisphereNormal.x, weights.y * hemisphereNormal.y, max(0.000001f, hemisphereNormal.z)));
+}
+
+float trowbridgeReitzPdf(vec2 roughness, vec3 localOutDir, vec3 halfVector)
+{
+    return trowbridgeReitzDistribution(halfVector, roughness) * abs(cosTheta(halfVector)) / (4.f * dot(localOutDir, halfVector));
+}
+
+// ===========================
+// == BxDF Helper Functions ==
+// ===========================
+
+float colorToLuminance(vec3 color)
+{
+    return 0.2126f * color.r + 0.7152 * color.g + 0.0722 * color.b;
+}
+
+vec3 colorToTint(vec3 color)
+{
+    float luminance = colorToLuminance(color);
+    return color / luminance;
+}
+
+vec3 schlickR0(float eta)
+{
+    float R0 = (eta - 1.f) / (eta + 1.f);
+    R0 = R0 * R0;
+    return vec3(R0);
+}
+
+vec3 schlickR0(float ior1, float ior2)
+{
+    float R0 = (ior1 - ior2) / (ior1 + ior2);
+    R0 = R0 * R0;
+    return vec3(R0);
+}
+
+vec3 schlickFresnel(vec3 R0, float cosThetaDiff)
+{
+    return R0 + (vec3(1.f) - R0) * (1 - cosThetaDiff);
+}
+
+vec3 fresnelDielectric(float cosThetaIn, float eta)
+{
+    // Flip the orientation if backwards
+    if (cosThetaIn < 0.f)
+    {
+        eta = 1.f / eta;
+        cosThetaIn = -cosThetaIn;
+    }
+
+    // Find the cosine of the transmitted direction according to Snell's law
+    float sin2ThetaIn = 1 - cosThetaIn * cosThetaIn;
+    float sin2ThetaTran = sin2ThetaIn / (eta * eta);
+
+    // Total interanl refraction
+    if (sin2ThetaTran >= 1.f) return vec3(1.f);
+
+    float cosThetaTran = sqrt(1.f - sin2ThetaTran);
+
+    float refPara = (eta * cosThetaIn - cosThetaTran) / (eta * cosThetaIn + cosThetaTran);
+    float refPerp = (cosThetaIn - eta * cosThetaTran) / (cosThetaIn + eta * cosThetaTran);
+
+    float fresnel = (refPara * refPara + refPerp * refPerp) / 2.f;
+    return vec3(fresnel);
+}
+
+vec3 fresnelDielectric(float cosThetaIn, float ior1, float ior2)
+{
+    return fresnelDielectric(cosThetaIn, ior1 / ior2);
+}
+
+vec3 disneyFresnel(Material material, vec3 localOutDir, vec3 halfVector, vec3 localInDir)
+{
+    float cosThetaOut = abs(dot(halfVector, localOutDir));
+    float cosThetaIn = dot(halfVector, localInDir);
+
+    // TODO add specular tint to material properties
+    vec3 tint = colorToTint(material.albedo);
+
+    vec3 R0 = schlickR0(IOR_AIR, material.ior);
+    R0 = mix(R0, material.albedo, material.metallic);
+
+    vec3 dielectricFresnel = fresnelDielectric(cosThetaIn, IOR_AIR, material.ior);
+    vec3 metallicFresnel = schlickFresnel(R0, cosThetaIn);
+    return mix(dielectricFresnel, metallicFresnel, material.metallic);
+}
+
 // ====================
 // == BxDF Functions ==
 // ====================
+
+// Diffuse
 
 vec3 diffuseAttenuation(Intersection intersection, Material material, vec3 localOutDir, vec3 halfVector, vec3 localInDir)
 {
@@ -455,17 +619,16 @@ vec3 diffuseAttenuation(Intersection intersection, Material material, vec3 local
     return lambert * retroResponse;
 }
 
-vec3 diffuseBxDF(Intersection intersection, Material material, vec3 localOutDir, vec3 halfVector, vec3 localInDir, out float forwardPdf, out float reversePdf)
+vec3 diffuseBRDF(Intersection intersection, Material material, vec3 localOutDir, vec3 halfVector, vec3 localInDir, out float pdf)
 {
     // PDF
-    forwardPdf = abs(cosTheta(localInDir));
-    reversePdf = abs(cosTheta(localOutDir));
+    pdf = abs(cosTheta(localInDir));
 
     // Attenuation
     return diffuseAttenuation(intersection, material, localOutDir, halfVector, localInDir);
 }
 
-vec3 sampleDiffuse(Intersection intersection, Material material, vec2 xi, vec3 outDir, out vec3 inDir, out float forwardPdf, out float reversePdf)
+vec3 sampleDiffuse(Intersection intersection, Material material, vec2 xi, vec3 outDir, out vec3 inDir, out float pdf)
 {
     mat3 lToW = localToWorld(intersection.normal);
     mat3 wToL = transpose(lToW);
@@ -477,32 +640,102 @@ vec3 sampleDiffuse(Intersection intersection, Material material, vec2 xi, vec3 o
 
     inDir = lToW * localInDir;
 
-    // Compute the BxDF
-    return diffuseBxDF(intersection, material, localOutDir, halfVector, localInDir, forwardPdf, reversePdf);
+    // Compute the BRDF
+    return diffuseBRDF(intersection, material, localOutDir, halfVector, localInDir, pdf);
 }
 
-void getLobeProbabilities(Material material, out float pDiffuse)
+// Specular
+
+vec3 specularAttenuation(Intersection intersection, Material material, vec3 localOutDir, vec3 halfVector, vec3 localInDir)
 {
-    pDiffuse = 1.f;
+    float cosThetaOut = abs(cosTheta(localOutDir));
+    float cosThetaIn = abs(cosTheta(localInDir));
+
+    if (cosThetaIn <= 0.f || cosThetaOut <= 0.f) return vec3(0.f);
+
+    vec2 anisotropicWeights = roughnessToAnisotropicWeights(material.roughness, material.anisotropy);
+
+    vec3 fresnel = disneyFresnel(material, localOutDir, halfVector, localInDir);
+
+    float distribution = trowbridgeReitzDistribution(halfVector, anisotropicWeights);
+    float masking = trowbridgeReitzMasking(localOutDir, localInDir, anisotropicWeights);
+
+    return distribution * masking * fresnel / (4 * cosThetaIn * cosThetaOut);
 }
 
-// Generic BxDF sampling function
+vec3 specularBRDF(Intersection intersection, Material material, vec3 localOutDir, vec3 halfVector, vec3 localInDir, out float pdf)
+{
+    // PDF
+    vec2 anisotropicWeights = roughnessToAnisotropicWeights(material.roughness, material.anisotropy);
+    pdf = trowbridgeReitzPdf(anisotropicWeights, localOutDir, halfVector);
+
+    // Attenuation
+    return specularAttenuation(intersection, material, localOutDir, halfVector, localInDir);
+}
+
+vec3 sampleSpecular(Intersection intersection, Material material, vec2 xi, vec3 outDir, out vec3 inDir, out float pdf)
+{
+    mat3 lToW = localToWorld(intersection.normal);
+    mat3 wToL = transpose(lToW);
+
+    // Find the incoming light direction
+    vec3 localOutDir = wToL * outDir;
+
+    if (localOutDir.z == 0.f) return vec3(0.f);
+
+    vec2 anisotropicWeights = roughnessToAnisotropicWeights(material.roughness, material.anisotropy);
+
+    vec3 halfVector = trowbridgeReitzSampleNormal(localOutDir, xi, anisotropicWeights);
+    vec3 localInDir = reflect(-localOutDir, halfVector);
+
+    if (localInDir.z * localOutDir.z <= 0.f) return vec3(0.f);
+
+    inDir = lToW * localInDir;
+
+    // Compute the BRDF
+    return specularBRDF(intersection, material, localOutDir, halfVector, localInDir, pdf);
+}
+
+// Generic BxDF sampling functions
+
+void getLobeProbabilities(Material material, out float pDiffuse, out float pSpecular, out float pTransmission)
+{
+    float matSpecularTransmission = 0.f;
+
+    float metallicBRDF = material.metallic;
+    float specularBSDF = (1.f - material.metallic) * (matSpecularTransmission);
+    float dielectricBRDF = (1.f - material.metallic) * (1.f - matSpecularTransmission);
+
+    float diffuseWeight = dielectricBRDF;
+    float specularWeight = metallicBRDF + dielectricBRDF;
+    float transmissionWeight = specularBSDF;
+
+    float totalWeightInv = 1.f / (specularWeight + transmissionWeight + diffuseWeight);
+
+    pDiffuse = diffuseWeight * totalWeightInv;
+    pSpecular = specularWeight * totalWeightInv;
+    pTransmission = transmissionWeight * totalWeightInv;
+}
 
 vec3 sampleSurface(Intersection intersection, vec2 xi, vec3 outDir, out vec3 inDir, out float pdf)
 {
     Material material = getMaterial(getMaterialIndex(intersection.index));
 
-    float pDiffuse;
-    getLobeProbabilities(material, pDiffuse);
+    float pDiffuse, pSpecular, pTransmission;
+    getLobeProbabilities(material, pDiffuse, pSpecular, pTransmission);
 
     float lobeChoice = rng();
 
     if (lobeChoice <= pDiffuse)
     {
-        float forwardPdf, reversePdf;
-        vec3 attenuation = sampleDiffuse(intersection, material, xi, outDir, inDir, forwardPdf, reversePdf);
-        pdf = forwardPdf;
-
+        vec3 attenuation = sampleDiffuse(intersection, material, xi, outDir, inDir, pdf);
+        pdf *= pDiffuse;
+        return attenuation;
+    }
+    else if (lobeChoice <= pSpecular + pDiffuse)
+    {
+        vec3 attenuation = sampleSpecular(intersection, material, xi, outDir, inDir, pdf);
+        pdf *= pSpecular;
         return attenuation;
     }
 
@@ -541,9 +774,10 @@ void main()
 
         if (pdf <= 0.f)
         {
-            attenuation = vec3(0.5f);
+            attenuation = vec3(0.f);
             break;
         }
+
         attenuation /= pdf;
 
         ray = Ray(ray.origin + ray.direction * intersection.t + inDir * 0.0001f, inDir);

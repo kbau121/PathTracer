@@ -165,6 +165,7 @@ typedef struct {
   texture_option_t alpha_texopt;
 
   // PBR extension
+  bool isPBR;
   // http://exocortex.com/blog/extending_wavefront_mtl_to_support_pbr
   real_t roughness;            // [0, 1] default 0
   real_t metallic;             // [0, 1] default 0
@@ -1144,6 +1145,7 @@ void LoadMtl(std::map<std::string, int> *material_map,
 
     // PBR: roughness
     if (token[0] == 'P' && token[1] == 'r' && IS_SPACE(token[2])) {
+      material.isPBR = true;
       token += 2;
       material.roughness = parseReal(&token);
       continue;
@@ -1151,6 +1153,7 @@ void LoadMtl(std::map<std::string, int> *material_map,
 
     // PBR: metallic
     if (token[0] == 'P' && token[1] == 'm' && IS_SPACE(token[2])) {
+      material.isPBR = true;
       token += 2;
       material.metallic = parseReal(&token);
       continue;
@@ -1158,6 +1161,7 @@ void LoadMtl(std::map<std::string, int> *material_map,
 
     // PBR: sheen
     if (token[0] == 'P' && token[1] == 's' && IS_SPACE(token[2])) {
+      material.isPBR = true;
       token += 2;
       material.sheen = parseReal(&token);
       continue;
@@ -1165,6 +1169,7 @@ void LoadMtl(std::map<std::string, int> *material_map,
 
     // PBR: clearcoat thickness
     if (token[0] == 'P' && token[1] == 'c' && IS_SPACE(token[2])) {
+      material.isPBR = true;
       token += 2;
       material.clearcoat_thickness = parseReal(&token);
       continue;
@@ -1172,6 +1177,7 @@ void LoadMtl(std::map<std::string, int> *material_map,
 
     // PBR: clearcoat roughness
     if ((0 == strncmp(token, "Pcr", 3)) && IS_SPACE(token[3])) {
+      material.isPBR = true;
       token += 4;
       material.clearcoat_roughness = parseReal(&token);
       continue;
@@ -1179,6 +1185,7 @@ void LoadMtl(std::map<std::string, int> *material_map,
 
     // PBR: anisotropy
     if ((0 == strncmp(token, "aniso", 5)) && IS_SPACE(token[5])) {
+      material.isPBR = true;
       token += 6;
       material.anisotropy = parseReal(&token);
       continue;
@@ -1186,6 +1193,7 @@ void LoadMtl(std::map<std::string, int> *material_map,
 
     // PBR: anisotropy rotation
     if ((0 == strncmp(token, "anisor", 6)) && IS_SPACE(token[6])) {
+      material.isPBR = true;
       token += 7;
       material.anisotropy_rotation = parseReal(&token);
       continue;
@@ -1266,6 +1274,7 @@ void LoadMtl(std::map<std::string, int> *material_map,
 
     // PBR: roughness texture
     if ((0 == strncmp(token, "map_Pr", 6)) && IS_SPACE(token[6])) {
+      material.isPBR = true;
       token += 7;
       ParseTextureNameAndOption(&(material.roughness_texname),
                                 &(material.roughness_texopt), token,
@@ -1275,6 +1284,7 @@ void LoadMtl(std::map<std::string, int> *material_map,
 
     // PBR: metallic texture
     if ((0 == strncmp(token, "map_Pm", 6)) && IS_SPACE(token[6])) {
+      material.isPBR = true;
       token += 7;
       ParseTextureNameAndOption(&(material.metallic_texname),
                                 &(material.metallic_texopt), token,
@@ -1284,6 +1294,7 @@ void LoadMtl(std::map<std::string, int> *material_map,
 
     // PBR: sheen texture
     if ((0 == strncmp(token, "map_Ps", 6)) && IS_SPACE(token[6])) {
+      material.isPBR = true;
       token += 7;
       ParseTextureNameAndOption(&(material.sheen_texname),
                                 &(material.sheen_texopt), token,
@@ -1293,6 +1304,7 @@ void LoadMtl(std::map<std::string, int> *material_map,
 
     // PBR: emissive texture
     if ((0 == strncmp(token, "map_Ke", 6)) && IS_SPACE(token[6])) {
+      material.isPBR = true;
       token += 7;
       ParseTextureNameAndOption(&(material.emissive_texname),
                                 &(material.emissive_texopt), token,
@@ -1302,6 +1314,7 @@ void LoadMtl(std::map<std::string, int> *material_map,
 
     // PBR: normal map texture
     if ((0 == strncmp(token, "norm", 4)) && IS_SPACE(token[4])) {
+      material.isPBR = true;
       token += 5;
       ParseTextureNameAndOption(
           &(material.normal_texname), &(material.normal_texopt), token,
