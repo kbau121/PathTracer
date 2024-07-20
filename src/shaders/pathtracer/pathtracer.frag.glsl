@@ -441,6 +441,33 @@ bool intersect(Ray ray, out Intersection intersection)
 
 // Fresnel equations
 
+float schlickR0(float eta)
+{
+    float R0 = (eta - 1.f) / (eta + 1.f);
+    return R0 * R0;
+}
+
+float schlickR0(float ior1, float ior2)
+{
+    float R0 = (ior1 - ior2) / (ior1 + ior2);
+    return R0 * R0;
+}
+
+float schlickFresnel(float R0, float cosTheta)
+{
+    return R0 + (1.f - R0) * pow(1.f - cosTheta, 5);
+}
+
+float schlickFresnel(float cosTheta)
+{
+    return schlickFresnel(0.05f, cosTheta);
+}
+
+vec3 schlickFresnel(vec3 R0, float cosTheta)
+{
+    return R0 + (vec3(1.f) - R0) * pow(1.f - cosTheta, 5);
+}
+
 float fresnelDielectric(float cosThetaIn, float eta)
 {
     // Flip the orientation if backwards
@@ -612,9 +639,8 @@ vec3 microfacetAttenuation(vec3 albedo, vec3 localOutDir, vec3 localInDir, vec2 
     if (localMicroNormal.x == 0.f && localMicroNormal.y == 0.f && localMicroNormal.z == 0.f) return vec3(0.f);
     localMicroNormal = normalize(localMicroNormal);
 
-    // TODO colored metals
-    vec3 fresnel = vec3(fresnelComplex(abs(dot(localOutDir, localMicroNormal)), vec2(0.27732f, 2.9278f)));
-
+    vec3 fresnel = schlickFresnel(albedo, abs(dot(localOutDir, localMicroNormal)));
+    
     float distribution = trowbridgeReitzDistribution(localMicroNormal, roughness);
     float masking = trowbridgeReitzMasking(localOutDir, localInDir, roughness);
 
@@ -649,7 +675,7 @@ vec3 dielectricBxDF(Intersection intersection, Material material, vec2 xi, vec3 
     if (localOutDir.z == 0.f) return vec3(0.f);
     vec3 localMicroNormal = trowbridgeReitzSampleNormal(localOutDir, xi, roughness);
 
-    float reflectance = fresnelDielectric(dot(localOutDir, localMicroNormal), material.ior);
+    float reflectance = schlickFresnel(abs(dot(localOutDir, localMicroNormal)));
     float transmittance = 1.f - reflectance;
 
     float reflectProb = reflectance;
