@@ -118,7 +118,7 @@ bool run()
     // ##############
 
     // TODO add a way to define lights from referenced files
-    Scene* defaultScene = new Scene("assets/Box_SmoothSphere.obj", "assets/");
+    Scene* defaultScene = new Scene("assets/Box_TransmissionSphere.obj", "assets/");
     defaultScene->m_lights = std::vector<Scene::Light> { Scene::Light(glm::vec3(4.f), glm::vec3(0.f, 1.95f, 0.f), glm::vec3(3.14f / 2.f, 0.f, 0.f), glm::vec3(1.25f, 1.25f, 1.f)) };
     defaultScene->m_lightCount = glm::uvec4(1, 0, 0, 0);
 

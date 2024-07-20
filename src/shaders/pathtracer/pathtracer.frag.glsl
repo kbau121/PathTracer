@@ -421,11 +421,6 @@ bool intersect(Ray ray, out Intersection intersection)
         vec3 n2 = getVertexAttribute(dataInd, 1, ATTRIBUTE_NORMAL);
         vec3 n3 = getVertexAttribute(dataInd, 2, ATTRIBUTE_NORMAL);
         intersection.normal = bary.x * n1 + bary.y * n2 + bary.z * n3;
-
-        if (dot(intersection.normal, ray.direction) > 0.f)
-        {
-            intersection.normal *= -1;
-        }
     
         return true;
     }
@@ -630,6 +625,11 @@ vec3 microfacetAttenuation(vec3 albedo, vec3 localOutDir, vec3 localInDir, vec2 
 
 vec3 diffuseBxDF(Intersection intersection, Material material, vec2 xi, vec3 outDir, out vec3 inDir, out float pdf)
 {
+    if (dot(intersection.normal, outDir) < 0.f)
+    {
+        intersection.normal *= -1;
+    }
+
     // Find the entrance direction
     vec3 localInDir = squareToHemisphereCosine(xi);
     inDir = localToWorld(intersection.normal) * localInDir;
@@ -655,6 +655,13 @@ vec3 dielectricBxDF(Intersection intersection, Material material, vec2 xi, vec3 
     float reflectProb = reflectance;
     float transmitProb = transmittance * material.transmission;
     float diffuseProb = transmittance * (1.f - material.transmission);
+
+    // If exiting the surface, only allow transmission
+    if (localOutDir.z < 0.f)
+    {
+        transmitProb = transmittance;
+        diffuseProb = 0.f;
+    }
 
     float interactionChoice = rng();
     if (interactionChoice <= reflectProb)
@@ -682,9 +689,9 @@ vec3 dielectricBxDF(Intersection intersection, Material material, vec2 xi, vec3 
         // Find the entrance direction
         float relativeEta;
         vec3 localInDir;
-        bool totalInteralReflection = !refract(localOutDir, localMicroNormal, material.ior, relativeEta, localInDir);
+        bool totalInternalReflection = !refract(localOutDir, localMicroNormal, material.ior, relativeEta, localInDir);
 
-        if (localOutDir.z * localInDir.z > 0.f || localInDir.z == 0.f || totalInteralReflection) return vec3(0.f);
+        if (localOutDir.z * localInDir.z > 0.f || localInDir.z == 0.f || totalInternalReflection) return vec3(0.f);
 
         inDir = localToWorld(intersection.normal) * localInDir;
 
@@ -696,14 +703,13 @@ vec3 dielectricBxDF(Intersection intersection, Material material, vec2 xi, vec3 
         float distribution = trowbridgeReitzDistribution(localMicroNormal, roughness);
         float masking = trowbridgeReitzMasking(localOutDir, localInDir, roughness);
 
-        return vec3(distribution * masking * transmittance * abs(dot(localInDir, localMicroNormal)) * dot(localOutDir, localMicroNormal) /
+        return material.albedo *
+            (distribution * masking * transmittance * dot(localInDir, localMicroNormal) * dot(localOutDir, localMicroNormal) /
             (cosTheta(localInDir) * cosTheta(localOutDir) * detDenom * detDenom));
     }
     else
     {
         // DIFFUSE
-
-        // TODO take into account entering and exiting the surface for diffuse interactions
 
         vec3 diffuseOut = diffuseBxDF(intersection, material, xi, outDir, inDir, pdf);
         pdf *= diffuseProb;
@@ -713,6 +719,12 @@ vec3 dielectricBxDF(Intersection intersection, Material material, vec2 xi, vec3 
 
 vec3 microFacetBxDF(Intersection intersection, Material material, vec2 xi, vec3 outDir, out vec3 inDir, out float pdf)
 {
+    if (dot(intersection.normal, outDir) < 0.f)
+    {
+        intersection.normal *= -1;
+    }
+
+    // TODO Replace with anisotropic weightings based on material's anisotropy property
     vec2 roughness = vec2(material.roughness);
 
     // Find the entrance direction
@@ -782,7 +794,7 @@ void main()
         vec3 inDir;
         float pdf;
 
-        attenuation *= sampleSurface(intersection, xi, -ray.direction, inDir, pdf) * dot(intersection.normal, inDir);
+        attenuation *= sampleSurface(intersection, xi, -ray.direction, inDir, pdf) * abs(dot(intersection.normal, inDir));
 
         if (pdf <= 0.f)
         {
