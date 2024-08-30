@@ -166,11 +166,23 @@ void coordinateSystem(in vec3 v1, out vec3 v2, out vec3 v3)
 
 // Local space assumes a normal of (0, 0, 1)
 
+mat3 localToWorld(vec3 normal, vec3 tangent)
+{
+    vec3 bitangent = normalize(cross(normal, tangent));
+    tangent = cross(bitangent, normal);
+    return mat3(tangent, bitangent, normal);
+}
+
 mat3 localToWorld(vec3 normal)
 {
     vec3 tangent, bitangent;
     coordinateSystem(normal, tangent, bitangent);
     return mat3(tangent, bitangent, normal);
+}
+
+mat3 worldToLocal(vec3 normal, vec3 tangent)
+{
+    return transpose(localToWorld(normal, tangent));
 }
 
 mat3 worldToLocal(vec3 normal)
@@ -305,6 +317,21 @@ Ray raycast()
     vec3 p = ref + H * screenCoords.x + V * screenCoords.y;
 
     return Ray(eye, normalize(p - eye));
+}
+
+// Transformation Matrices
+
+mat3 axisAngle(vec3 axis, float radians)
+{
+    float s = sin(radians);
+    float c = cos(radians);
+    float oc = 1.f - c;
+
+    return mat3(
+        oc * axis.x * axis.x + c,          oc * axis.x * axis.y - axis.z * s, oc * axis.z * axis.x + axis.y * s,
+        oc * axis.x * axis.y + axis.z * s, oc * axis.y * axis.y + c,          oc * axis.y * axis.z - axis.x * s,
+        oc * axis.z * axis.x - axis.y * s, oc * axis.y * axis.z + axis.x * s, oc * axis.z * axis.z + c
+        );
 }
 
 // Complex number operations
@@ -551,19 +578,33 @@ bool refract(vec3 inDir, vec3 normal, float eta, out float relativeEta, out vec3
 
 // Microfacet helper functions
 
-float isotropicRoughness2(vec3 v, vec2 anisotropicRoughness)
+vec2 roughnessToAnisotropic(float roughness, float anisotropy)
+{
+    vec2 alpha = vec2(roughness * roughness);
+
+    if (anisotropy > 0.f)
+    {
+        float aspect = sqrt(1.f - anisotropy * 0.9f);
+        alpha.x /= aspect;
+        alpha.y *= aspect;
+    }
+
+    return alpha;
+}
+
+float isotropicRoughness2(vec3 v, vec2 alpha)
 {
     return
-        anisotropicRoughness.x * anisotropicRoughness.x * cos2Phi(v)
-        + anisotropicRoughness.y * anisotropicRoughness.y * sin2Phi(v);
+        alpha.x * alpha.x * cos2Phi(v)
+        + alpha.y * alpha.y * sin2Phi(v);
 }
 
-float isotropicRoughness(vec3 v, vec2 anisotropicRoughness)
+float isotropicRoughness(vec3 v, vec2 alpha)
 {
-    return sqrt(isotropicRoughness2(v, anisotropicRoughness));
+    return sqrt(isotropicRoughness2(v, alpha));
 }
 
-float trowbridgeReitzDistribution(vec3 localMicroNormal, vec2 roughness)
+float trowbridgeReitzDistribution(vec3 localMicroNormal, vec2 alpha)
 {
     float tan2Theta = tan2Theta(localMicroNormal);
     if (isinf(tan2Theta)) return 0.f;
@@ -572,29 +613,29 @@ float trowbridgeReitzDistribution(vec3 localMicroNormal, vec2 roughness)
     float cos4Theta = cos2Theta * cos2Theta;
     float e =
         (
-          cos2Phi(localMicroNormal) / (roughness.x * roughness.x)
-          + sin2Phi(localMicroNormal) / (roughness.y * roughness.y)
+          cos2Phi(localMicroNormal) / (alpha.x * alpha.x)
+          + sin2Phi(localMicroNormal) / (alpha.y * alpha.y)
         ) * tan2Theta;
 
-    return 1.f / (PI * roughness.x * roughness.y * cos4Theta * (1.f + e) * (1.f + e));
+    return 1.f / (PI * alpha.x * alpha.y * cos4Theta * (1.f + e) * (1.f + e));
 }
 
-float trowbridgeReitzLambda(vec3 v, vec2 roughness)
+float trowbridgeReitzLambda(vec3 v, vec2 alpha)
 {
     float tan2Theta = tan2Theta(v);
     if (isinf(tan2Theta)) return 0.f;
 
-    return (sqrt(1.f + isotropicRoughness2(v, roughness) * tan2Theta) - 1.f) * 0.5f;
+    return (sqrt(1.f + isotropicRoughness2(v, alpha) * tan2Theta) - 1.f) * 0.5f;
 }
 
-float trowbridgeReitzMasking(vec3 outDir, vec3 inDir, vec2 roughness)
+float trowbridgeReitzMasking(vec3 localOutDir, vec3 localInDir, vec2 alpha)
 {
-    return 1.f / (1.f + trowbridgeReitzLambda(outDir, roughness) + trowbridgeReitzLambda(inDir, roughness));
+    return 1.f / (1.f + trowbridgeReitzLambda(localOutDir, alpha) + trowbridgeReitzLambda(localInDir, alpha));
 }
 
-vec3 trowbridgeReitzSampleNormal(vec3 localOutDir, vec2 xi, vec2 roughness)
+vec3 trowbridgeReitzSampleNormal(vec3 localOutDir, vec2 xi, vec2 alpha)
 {
-    vec3 hemisphereOutDir = normalize(vec3(roughness.x * localOutDir.x, roughness.y * localOutDir.y, localOutDir.z));
+    vec3 hemisphereOutDir = normalize(vec3(alpha.x * localOutDir.x, alpha.y * localOutDir.y, localOutDir.z));
     if (hemisphereOutDir.z < 0) hemisphereOutDir = -hemisphereOutDir;
 
     vec3 T1 = (hemisphereOutDir.z < 0.99999f) ? normalize(cross(vec3(0.f, 0.f, 1.f), hemisphereOutDir)) : vec3(1.f, 0.f, 0.f);
@@ -605,9 +646,22 @@ vec3 trowbridgeReitzSampleNormal(vec3 localOutDir, vec2 xi, vec2 roughness)
     float h = sqrt(1.f - p.x * p.x);
     p.y = mix((1.f - hemisphereOutDir.z) / 2.f, h, p.y);
 
+    //float s = 0.5f * (1.f + hemisphereOutDir.z);
+    //p.y = (1.f - s) * sqrt(1.f - p.x * p.x) + s * p.y;
+
+    //p.y = mix(sqrt(1.f - p.x * p.x), p.y, 0.5f * (1.f + hemisphereOutDir.z));
+
     float pz = sqrt(max(0.f, 1.f - dot(p, p)));
+
     vec3 hemisphereNormal = p.x * T1 + p.y * T2 + pz * hemisphereOutDir;
-    return normalize(vec3(roughness.x * hemisphereNormal.x, roughness.y * hemisphereNormal.y, max(0.000001f, hemisphereNormal.z)));
+    return normalize(vec3(alpha.x * hemisphereNormal.x, alpha.y * hemisphereNormal.y, max(0.000001f, hemisphereNormal.z)));
+}
+
+float trowbridgeReitzDensity(vec3 localOutDir, vec3 localMicroNormal, vec2 alpha)
+{
+    float G1 = 1.f / (1.f + trowbridgeReitzLambda(localOutDir, alpha));
+
+    return G1 * trowbridgeReitzDistribution(localMicroNormal, alpha) * abs(dot(localOutDir, localMicroNormal)) / abs(cosTheta(localOutDir));
 }
 
 // PDF functions
@@ -617,9 +671,9 @@ float hemisphereCosinePDF(vec3 hemisphereSample)
     return hemisphereSample.z * INV_PI;
 }
 
-float trowbridgeReitzPdf(vec3 localMicroNormal, vec2 roughness)
+float trowbridgeReitzPdf(vec3 localOutDir, vec3 localMicroNormal, vec2 alpha)
 {
-    return trowbridgeReitzDistribution(localMicroNormal, roughness) * abs(cosTheta(localMicroNormal));
+    return trowbridgeReitzDensity(localOutDir, localMicroNormal, alpha);
 }
 
 // Attenuation functions
@@ -629,7 +683,7 @@ vec3 diffuseAttenuation(Material material)
     return material.albedo * INV_PI;
 }
 
-vec3 microfacetAttenuation(vec3 albedo, vec3 localOutDir, vec3 localInDir, vec2 roughness)
+vec3 microfacetAttenuation(Material material, vec3 localOutDir, vec3 localInDir, vec2 alpha)
 {
     float cosThetaOut = abs(cosTheta(localOutDir));
     float cosThetaIn = abs(cosTheta(localInDir));
@@ -639,10 +693,10 @@ vec3 microfacetAttenuation(vec3 albedo, vec3 localOutDir, vec3 localInDir, vec2 
     if (localMicroNormal.x == 0.f && localMicroNormal.y == 0.f && localMicroNormal.z == 0.f) return vec3(0.f);
     localMicroNormal = normalize(localMicroNormal);
 
-    vec3 fresnel = schlickFresnel(albedo, abs(dot(localOutDir, localMicroNormal)));
+    vec3 fresnel = schlickFresnel(material.albedo, abs(dot(localOutDir, localMicroNormal)));
     
-    float distribution = trowbridgeReitzDistribution(localMicroNormal, roughness);
-    float masking = trowbridgeReitzMasking(localOutDir, localInDir, roughness);
+    float distribution = trowbridgeReitzDistribution(localMicroNormal, alpha);
+    float masking = trowbridgeReitzMasking(localOutDir, localInDir, alpha);
 
     return distribution * masking * fresnel / (4 * cosThetaIn * cosThetaOut);
 }
@@ -701,7 +755,7 @@ vec3 dielectricBxDF(Intersection intersection, Material material, vec2 xi, vec3 
         inDir = localToWorld(intersection.normal) * localInDir;
 
         // PDF
-        pdf = trowbridgeReitzPdf(localMicroNormal, roughness) / (4.f * dot(localOutDir, localMicroNormal)) * reflectProb;
+        pdf = trowbridgeReitzPdf(localOutDir, localMicroNormal, roughness) / (4.f * dot(localOutDir, localMicroNormal)) * reflectProb;
 
         float distribution = trowbridgeReitzDistribution(localMicroNormal, roughness);
         float masking = trowbridgeReitzMasking(localOutDir, localInDir, roughness);
@@ -724,7 +778,7 @@ vec3 dielectricBxDF(Intersection intersection, Material material, vec2 xi, vec3 
         // PDF
         float detDenom = dot(localInDir, localMicroNormal) + dot(localOutDir, localMicroNormal) / relativeEta;
         float detMicro_detIn = abs(dot(localInDir, localMicroNormal)) / (detDenom * detDenom);
-        pdf = trowbridgeReitzPdf(localMicroNormal, roughness) * detMicro_detIn * transmitProb;
+        pdf = trowbridgeReitzPdf(localOutDir, localMicroNormal, roughness) * detMicro_detIn * transmitProb;
 
         float distribution = trowbridgeReitzDistribution(localMicroNormal, roughness);
         float masking = trowbridgeReitzMasking(localOutDir, localInDir, roughness);
@@ -745,29 +799,41 @@ vec3 dielectricBxDF(Intersection intersection, Material material, vec2 xi, vec3 
 
 vec3 microFacetBxDF(Intersection intersection, Material material, vec2 xi, vec3 outDir, out vec3 inDir, out float pdf)
 {
+    //
+    float angle = 0.f;
+    mat3 anisoRotation = axisAngle(vec3(0.f, 0.f, 1.f), angle * PI / 180.f);
+    mat3 anisoRotationInv = transpose(anisoRotation);
+    //
+
     if (dot(intersection.normal, outDir) < 0.f)
     {
         intersection.normal *= -1;
     }
 
-    // TODO Replace with anisotropic weightings based on material's anisotropy property
-    vec2 roughness = vec2(material.roughness);
+    vec2 alpha = roughnessToAnisotropic(material.roughness, material.anisotropy);
 
     // Find the entrance direction
-    vec3 localOutDir = worldToLocal(intersection.normal) * outDir;
+    vec3 localOutDir = worldToLocal(intersection.normal, vec3(0.f, 0.f, 1.f)) * outDir;
 
     if (localOutDir.z == 0.f) return vec3(0.f);
 
-    vec3 localMicroNormal = trowbridgeReitzSampleNormal(localOutDir, xi, roughness);
+    //
+    localOutDir = anisoRotation * localOutDir;
+    //
+
+    vec3 localMicroNormal = trowbridgeReitzSampleNormal(localOutDir, xi, alpha);
     vec3 localInDir = reflect(-localOutDir, localMicroNormal);
 
     if (localInDir.z * localOutDir.z <= 0.f) return vec3(0.f);
 
-    inDir = localToWorld(intersection.normal) * localInDir;
+    //
+    inDir = localToWorld(intersection.normal, vec3(0.f, 0.f, 1.f)) * anisoRotationInv * localInDir;
+    //
+    //inDir = localToWorld(intersection.normal) * localInDir;
 
     // Compute the PDF
-    pdf = trowbridgeReitzPdf(localMicroNormal, roughness) / (4.f * dot(localOutDir, localMicroNormal));
-    return microfacetAttenuation(material.albedo, localOutDir, localInDir, roughness);
+    pdf = trowbridgeReitzPdf(localOutDir, localMicroNormal, alpha) / (4.f * dot(localOutDir, localMicroNormal));
+    return microfacetAttenuation(material, localOutDir, localInDir, alpha);
 }
 
 // Generic BxDF sampling function
@@ -775,7 +841,6 @@ vec3 microFacetBxDF(Intersection intersection, Material material, vec2 xi, vec3 
 vec3 sampleSurface(Intersection intersection, vec2 xi, vec3 outDir, out vec3 inDir, out float pdf)
 {
     Material material = getMaterial(getMaterialIndex(intersection.index));
-    vec2 roughness = vec2(material.roughness);
 
     // Metallic
     if (material.metallic >= rng())
